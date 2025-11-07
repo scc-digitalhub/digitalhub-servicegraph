@@ -1,0 +1,46 @@
+package model
+
+import (
+	"io"
+	"log/slog"
+
+	"sigs.k8s.io/yaml"
+)
+
+type Reader struct {
+	logger *slog.Logger
+}
+
+func NewReader() (*Reader, error) {
+	logger := slog.Default()
+	logger = logger.With(slog.Group("model", slog.String("name", "reader")))
+
+	return &Reader{
+		logger: logger,
+	}, nil
+}
+
+func (r *Reader) Read(reader io.Reader) (*Graph, error) {
+	graph := &Graph{}
+
+	bodyBytes, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := yaml.Unmarshal(bodyBytes, &graph); err != nil {
+		return nil, err
+	}
+
+	err = r.validateGraph(graph)
+	if err != nil {
+		return nil, err
+	}
+
+	return graph, nil
+}
+
+func (r *Reader) validateGraph(graph *Graph) error {
+	// TODO
+	return nil
+}

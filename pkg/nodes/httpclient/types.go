@@ -1,0 +1,51 @@
+package httpclient
+
+import (
+	"maps"
+
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+)
+
+const (
+	defaultMethod = "POST"
+)
+
+type Configuration struct {
+	URL     string
+	Method  string
+	Params  map[string]string
+	Headers map[string]string
+}
+
+func NewConfiguration(url, method string, params, headers map[string]string) *Configuration {
+	conf := &Configuration{
+		URL:     url,
+		Method:  defaultMethod,
+		Params:  make(map[string]string),
+		Headers: make(map[string]string),
+	}
+
+	if method != "" {
+		conf.Method = method
+	}
+	if params != nil {
+		maps.Copy(conf.Params, params)
+	}
+	if headers != nil {
+		maps.Copy(conf.Headers, headers)
+	}
+
+	return conf
+}
+
+func (c *Configuration) Ground(in streams.Event) (streams.Event, error) {
+	// TODO ground jsonpath expressions in headers and fields to produce new URL
+	url := c.URL
+	method := c.Method
+
+	event, err := streams.NewGenericEvent(in.GetBody(), url, method, in.GetHeaders(), in.GetFields())
+	if err != nil {
+		return nil, err
+	}
+	return event, nil
+}

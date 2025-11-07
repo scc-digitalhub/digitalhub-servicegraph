@@ -1,0 +1,30 @@
+package wsclient
+
+import (
+	"maps"
+)
+
+type Configuration struct {
+	URL     string
+	MsgType int
+	Params  map[string]string
+	Headers map[string]string // check
+}
+
+func NewConfiguration(url string, params, headers map[string]string, msgType int) *Configuration {
+	conf := &Configuration{
+		URL:     url,
+		Params:  make(map[string]string),
+		Headers: make(map[string]string),
+		MsgType: msgType,
+	}
+
+	if params != nil {
+		maps.Copy(conf.Params, params)
+	}
+	if headers != nil {
+		maps.Copy(conf.Headers, headers)
+	}
+
+	return conf
+}
