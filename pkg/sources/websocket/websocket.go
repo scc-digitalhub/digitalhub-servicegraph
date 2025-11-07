@@ -90,11 +90,13 @@ func (s *WSSource) wsHandler(w http.ResponseWriter, r *http.Request) {
 func (s *WSSource) handleConnection(conn *websocket.Conn) {
 	input := make(chan any)
 	var output chan any
-	sink := *s.sink
-	if sink == nil {
-		sink = extension.NewChanSink(output)
+	var sink streams.Sink
+	if s.sink == nil {
 		output = make(chan any)
+		sink = extension.NewChanSink(output)
 		go s.handleOutput(conn, output)
+	} else {
+		sink = *s.sink
 	}
 
 	go func() {

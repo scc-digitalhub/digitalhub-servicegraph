@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/http"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/websocket"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/extension"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/flow"
@@ -10,7 +11,9 @@ import (
 
 func main() {
 	// mainHttpSync()
-	mainHttpAsync()
+	// mainHttpAsync()
+	// mainWebSocketSync()
+	mainWebSocketAsync()
 }
 
 func mainHttpSync() {
@@ -19,6 +22,14 @@ func mainHttpSync() {
 
 func mainHttpAsync() {
 	http.NewHTTPSource(http.NewConfiguration(8080, 0, 0, 0, 100000)).StartAsync(&TestFactory{}, extension.NewStdoutSink())
+}
+
+func mainWebSocketSync() {
+	websocket.NewWSSource(websocket.NewConfiguration(8080, 2)).Start(&TestFactory{})
+}
+
+func mainWebSocketAsync() {
+	websocket.NewWSSource(websocket.NewConfiguration(8080, 2)).StartAsync(&TestFactory{}, extension.NewStdoutSink())
 }
 
 type TestFactory struct {
