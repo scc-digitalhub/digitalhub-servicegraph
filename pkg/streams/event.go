@@ -187,7 +187,7 @@ func NewEventFrom(value interface{}) Event {
 		event, _ := NewGenericEvent(body, "", "", nil, nil)
 		return event
 	default:
-		event, _ := NewGenericEvent([]byte(fmt.Sprintf("%w", value)), "", "", nil, nil)
+		event, _ := NewGenericEvent([]byte(fmt.Sprintf("%v", value)), "", "", nil, nil)
 		return event
 
 	}

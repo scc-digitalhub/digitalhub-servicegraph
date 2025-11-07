@@ -11,10 +11,10 @@ const (
 )
 
 type Configuration struct {
-	URL     string
-	Method  string
-	Params  map[string]string
-	Headers map[string]string
+	URL     string            `json,yaml:"url"`
+	Method  string            `json,yaml:"method"`
+	Params  map[string]string `json,yaml:"params,omitempty"`
+	Headers map[string]string `json,yaml:"headers,omitempty"`
 }
 
 func NewConfiguration(url, method string, params, headers map[string]string) *Configuration {

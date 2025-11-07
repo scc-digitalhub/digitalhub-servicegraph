@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/extension"
@@ -163,4 +165,27 @@ func (s *WSSource) cleanConnection(conn *websocket.Conn, err error) {
 	s.mutex.Lock()
 	delete(s.connections, conn)
 	s.mutex.Unlock()
+}
+
+func init() {
+	sources.RegistrySingleton.Register("websocket", &WebSocketConverter{})
+}
+
+type WebSocketConverter struct {
+	sources.Converter
+}
+
+func (c *WebSocketConverter) Convert(input model.InputSpec) (sources.Source, error) {
+	// marshal to json, unmarshal to config
+	data, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
+	conf := &Configuration{}
+	err = json.Unmarshal(data, conf)
+	if err != nil {
+		return nil, err
+	}
+	src := NewWSSource(conf)
+	return src, nil
 }

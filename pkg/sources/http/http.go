@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -202,8 +203,16 @@ type HTTPConverter struct {
 }
 
 func (c *HTTPConverter) Convert(input model.InputSpec) (sources.Source, error) {
-	// TODO marshal to json, unmarshal to config
+	// marshal to json, unmarshal to config
+	data, err := json.Marshal(input)
+	if err != nil {
+		return nil, err
+	}
 	conf := &Configuration{}
+	err = json.Unmarshal(data, conf)
+	if err != nil {
+		return nil, err
+	}
 	src := NewHTTPSource(conf)
 	return src, nil
 }

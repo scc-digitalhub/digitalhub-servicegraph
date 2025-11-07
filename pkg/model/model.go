@@ -51,7 +51,6 @@ type WebSocketSpec struct {
 
 type InputSpec struct {
 	Kind string                 `json,yaml:"kind"`
-	Mode ExecMode               `json,yaml:"mode"`
 	Spec map[string]interface{} `json,yaml:"spec,omitempty"`
 }
 type OutputSpec struct {
@@ -60,7 +59,7 @@ type OutputSpec struct {
 }
 
 type Graph struct {
-	Input  InputSpec  `json,yaml:"input"`
-	Flow   Node       `json,yaml:"flow"`
-	Output OutputSpec `json,yaml:"output,omitempty"`
+	Input  *InputSpec  `json,yaml:"input"`
+	Flow   *Node       `json,yaml:"flow"`
+	Output *OutputSpec `json,yaml:"output,omitempty"`
 }
