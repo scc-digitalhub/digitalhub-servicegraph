@@ -18,6 +18,10 @@ type Outlet interface {
 	Out() <-chan any
 }
 
+type Passing interface {
+	Via(Flow) Flow
+}
+
 // Source represents a set of stream processing steps that has one open output.
 // A Source will usually connect to a database or streaming platform to produce
 // a stream of events/records.
@@ -26,7 +30,7 @@ type Source interface {
 	Outlet
 	// Via asynchronously streams data from the Source's Outlet to the given Flow.
 	// It should return a new Flow that represents the combined pipeline.
-	Via(Flow) Flow
+	Passing
 }
 
 // Flow represents a set of stream processing steps that has one open input
@@ -38,7 +42,7 @@ type Flow interface {
 	Outlet
 	// Via asynchronously streams data from the Flow's Outlet to the given Flow.
 	// It should return a new Flow that represents the combined pipeline.
-	Via(Flow) Flow
+	Passing
 	// To streams data from the Flow's Outlet to the given Sink, and should block
 	// until the Sink has completed processing all data, which can be verified
 	// via the Sink's AwaitCompletion method.

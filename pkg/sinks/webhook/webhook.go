@@ -97,7 +97,7 @@ func (whc *WebHook) stream() {
 func (whc *WebHook) call(msg streams.Event) streams.Event {
 	req, err := whc.conf.Ground(msg)
 	if err != nil {
-		return streams.NewErrorEvent(err)
+		return streams.NewErrorEvent(err, 500)
 	}
 
 	var bodyReader *bytes.Reader = nil
@@ -107,7 +107,7 @@ func (whc *WebHook) call(msg streams.Event) streams.Event {
 
 	httpReq, err := http.NewRequest(strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
 	if err != nil {
-		return streams.NewErrorEvent(err)
+		return streams.NewErrorEvent(err, 500)
 	}
 	if req.GetHeaders() != nil {
 		for header, value := range req.GetHeaders() {
@@ -117,13 +117,13 @@ func (whc *WebHook) call(msg streams.Event) streams.Event {
 
 	resp, err := whc.httpClient.Do(httpReq)
 	if err != nil {
-		return streams.NewErrorEvent(err)
+		return streams.NewErrorEvent(err, resp.StatusCode)
 	}
 	defer resp.Body.Close()
 
 	resBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return streams.NewErrorEvent(err)
+		return streams.NewErrorEvent(err, 500)
 	}
 	return streams.NewEventFrom(resBody)
 }
@@ -138,7 +138,7 @@ type WebHookConverter struct {
 
 func (c *WebHookConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
 	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input)
+	data, err := json.Marshal(input.Spec)
 	if err != nil {
 		return nil, err
 	}
@@ -147,6 +147,7 @@ func (c *WebHookConverter) Convert(input model.OutputSpec) (streams.Sink, error)
 	if err != nil {
 		return nil, err
 	}
+	conf = NewConfiguration(conf.URL, conf.Params, conf.Headers, conf.Parallelism)
 	src := NewWebHook(*conf)
 	return src, nil
 }

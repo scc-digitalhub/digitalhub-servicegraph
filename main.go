@@ -1,6 +1,12 @@
 package main
 
 import (
+	"os"
+
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/app"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
+	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/httpclient"
+	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/wsclient"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/http"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/websocket"
@@ -13,7 +19,25 @@ func main() {
 	// mainHttpSync()
 	// mainHttpAsync()
 	// mainWebSocketSync()
-	mainWebSocketAsync()
+	// mainWebSocketAsync()
+	simpleYaml()
+}
+
+func simpleYaml() {
+	modelReader, _ := model.NewReader()
+
+	file, err := os.Open("test/simple.yaml")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	graph, err := modelReader.ReadYAML(file)
+	if err != nil {
+		panic(err)
+	}
+	app := app.NewApp(*graph)
+	app.Run()
 }
 
 func mainHttpSync() {
@@ -37,7 +61,7 @@ type TestFactory struct {
 }
 
 func (f *TestFactory) GenerateFlow(source streams.Source, sink streams.Sink) {
-	source.Via(flow.NewMap(mock, 1)).To(sink)
+	source.Via(flow.NewMap(mock, 1).Via(flow.NewMap(mock, 1))).To(sink)
 }
 
 func mock(input interface{}) interface{} {

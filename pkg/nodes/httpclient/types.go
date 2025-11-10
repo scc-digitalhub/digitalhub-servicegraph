@@ -11,18 +11,24 @@ const (
 )
 
 type Configuration struct {
-	URL     string            `json,yaml:"url"`
-	Method  string            `json,yaml:"method"`
-	Params  map[string]string `json,yaml:"params,omitempty"`
-	Headers map[string]string `json,yaml:"headers,omitempty"`
+	URL          string            `json,yaml:"url"`
+	Method       string            `json,yaml:"method"`
+	Params       map[string]string `json,yaml:"params,omitempty"`
+	Headers      map[string]string `json,yaml:"headers,omitempty"`
+	numInstances int               `json,yaml:"num_instances,omitempty"`
 }
 
-func NewConfiguration(url, method string, params, headers map[string]string) *Configuration {
+func NewConfiguration(url, method string, params, headers map[string]string, numInstances int) *Configuration {
 	conf := &Configuration{
 		URL:     url,
 		Method:  defaultMethod,
 		Params:  make(map[string]string),
 		Headers: make(map[string]string),
+	}
+	if numInstances > 0 {
+		conf.numInstances = numInstances
+	} else {
+		conf.numInstances = 1
 	}
 
 	if method != "" {
@@ -43,7 +49,7 @@ func (c *Configuration) Ground(in streams.Event) (streams.Event, error) {
 	url := c.URL
 	method := c.Method
 
-	event, err := streams.NewGenericEvent(in.GetBody(), url, method, in.GetHeaders(), in.GetFields())
+	event, err := streams.NewGenericEvent(in.GetBody(), url, method, in.GetHeaders(), in.GetFields(), 200)
 	if err != nil {
 		return nil, err
 	}

@@ -14,7 +14,7 @@ type Configuration struct {
 	Parallelism int               `json,yaml:"parallelism,omitempty"`
 }
 
-func NewConfiguration(url, method string, params, headers map[string]string, parallelism int) *Configuration {
+func NewConfiguration(url string, params, headers map[string]string, parallelism int) *Configuration {
 	conf := &Configuration{
 		URL:         url,
 		Params:      make(map[string]string),
@@ -38,7 +38,7 @@ func (c *Configuration) Ground(in streams.Event) (streams.Event, error) {
 	// TODO ground jsonpath expressions in headers and fields to produce new URL
 	url := c.URL
 
-	event, err := streams.NewGenericEvent(in.GetBody(), url, http.MethodPost, in.GetHeaders(), in.GetFields())
+	event, err := streams.NewGenericEvent(in.GetBody(), url, http.MethodPost, in.GetHeaders(), in.GetFields(), 200)
 	if err != nil {
 		return nil, err
 	}

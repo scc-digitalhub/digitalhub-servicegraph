@@ -2,14 +2,16 @@ package httpclient
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 )
 
@@ -21,11 +23,10 @@ import (
 //
 // out  -- 1 -- 2 ---- 3 -- 4 ------ 5 --
 type HttpClient struct {
-	conf        Configuration
-	in          chan any
-	out         chan any
-	parallelism int
-	httpClient  http.Client
+	conf       Configuration
+	in         chan any
+	out        chan any
+	httpClient http.Client
 }
 
 // Verify HttpClient satisfies the Flow interface.
@@ -39,17 +40,12 @@ var _ streams.Flow = (*HttpClient)(nil)
 // the order of elements in the output stream must be preserved, set parallelism to 1.
 //
 // NewMap will panic if parallelism is less than 1.
-func NewHttpClient(conf Configuration, parallelism int) *HttpClient {
-	if parallelism < 1 {
-		panic(fmt.Sprintf("nonpositive HttpClient parallelism: %d", parallelism))
-	}
-
+func NewHttpClient(conf Configuration) *HttpClient {
 	hcFlow := &HttpClient{
-		conf:        conf,
-		in:          make(chan any),
-		out:         make(chan any),
-		parallelism: parallelism,
-		httpClient:  *createClient(),
+		conf:       conf,
+		in:         make(chan any),
+		out:        make(chan any),
+		httpClient: *createClient(),
 	}
 
 	// start processing stream elements
@@ -94,7 +90,7 @@ func (hc *HttpClient) transmit(inlet streams.Inlet) {
 func (hc *HttpClient) stream() {
 	var wg sync.WaitGroup
 	// create a pool of worker goroutines
-	for i := 0; i < hc.parallelism; i++ {
+	for i := 0; i < hc.conf.numInstances; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -113,7 +109,7 @@ func (hc *HttpClient) stream() {
 func (hc *HttpClient) call(msg streams.Event) streams.Event {
 	req, err := hc.conf.Ground(msg)
 	if err != nil {
-		return streams.NewErrorEvent(err)
+		return streams.NewErrorEvent(err, 500)
 	}
 
 	var bodyReader *bytes.Reader = nil
@@ -123,7 +119,7 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 
 	httpReq, err := http.NewRequest(strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
 	if err != nil {
-		return streams.NewErrorEvent(err)
+		return streams.NewErrorEvent(err, 500)
 	}
 	if req.GetHeaders() != nil {
 		for header, value := range req.GetHeaders() {
@@ -133,13 +129,13 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 
 	resp, err := hc.httpClient.Do(httpReq)
 	if err != nil {
-		return streams.NewErrorEvent(err)
+		return streams.NewErrorEvent(err, resp.StatusCode)
 	}
 	defer resp.Body.Close()
 
 	resBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return streams.NewErrorEvent(err)
+		return streams.NewErrorEvent(err, 500)
 	}
 	return streams.NewEventFrom(resBody)
 }
@@ -164,4 +160,28 @@ func createClient() *http.Client {
 			return nil
 		},
 	}
+}
+
+func init() {
+	nodes.RegistrySingleton.Register("http", &HTTPConverter{})
+}
+
+type HTTPConverter struct {
+	nodes.Converter
+}
+
+func (c *HTTPConverter) Convert(spec model.NodeConfig) (streams.Flow, error) {
+	// marshal to json, unmarshal to config
+	data, err := json.Marshal(spec.Spec)
+	if err != nil {
+		return nil, err
+	}
+	conf := &Configuration{}
+	err = json.Unmarshal(data, conf)
+	if err != nil {
+		return nil, err
+	}
+	conf = NewConfiguration(conf.URL, conf.Method, conf.Params, conf.Headers, conf.numInstances)
+	src := NewHttpClient(*conf)
+	return src, nil
 }

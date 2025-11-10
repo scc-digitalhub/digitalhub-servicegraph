@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
@@ -19,8 +20,25 @@ func NewApp(graph model.Graph) *App {
 }
 
 func (a *App) GenerateFlow(source streams.Source, sink streams.Sink) {
-	// source.Via()
-	// TODO
+	flow := generateFlow(source, a.graph.Flow)
+	flow.To(sink)
+}
+
+func generateFlow(outlet streams.Passing, node *model.Node) streams.Flow {
+	switch node.Type {
+	// TODO: implement other node types
+	case model.Sequence:
+		var flow streams.Flow = nil
+		for _, child := range node.Nodes {
+			flow = generateFlow(outlet, &child)
+		}
+		return flow
+	case model.Service:
+		converter, _ := nodes.RegistrySingleton.Get(node.Config.Kind)
+		flow, _ := converter.(nodes.Converter).Convert(node.Config)
+		return outlet.Via(flow)
+	}
+	return nil
 }
 
 func (a *App) Run() error {
@@ -36,9 +54,9 @@ func (a *App) Run() error {
 		if err != nil {
 			return err
 		}
-		source.StartAsync(a.FlowFactory, sink)
+		source.StartAsync(a, sink)
 	} else {
-		source.Start(a.FlowFactory)
+		source.Start(a)
 	}
 
 	return nil

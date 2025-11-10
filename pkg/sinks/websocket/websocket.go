@@ -104,7 +104,7 @@ type WebSocketConverter struct {
 
 func (c *WebSocketConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
 	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input)
+	data, err := json.Marshal(input.Spec)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +113,7 @@ func (c *WebSocketConverter) Convert(input model.OutputSpec) (streams.Sink, erro
 	if err != nil {
 		return nil, err
 	}
+	conf = NewConfiguration(conf.URL, conf.Params, conf.Headers, conf.MsgType)
 	src, err := NewWebSocketSink(*conf)
 	if err != nil {
 		return nil, err

@@ -1,11 +1,14 @@
 package wsclient
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
 
 	ws "github.com/gorilla/websocket"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 )
 
@@ -128,4 +131,28 @@ func (wsc *WebSocketClient) forwardMessage(event streams.Event) {
 		wsc.logger.Error("Error processing message", slog.Any("error", err))
 	}
 
+}
+
+func init() {
+	nodes.RegistrySingleton.Register("websocket", &WSConverter{})
+}
+
+type WSConverter struct {
+	nodes.Converter
+}
+
+func (c *WSConverter) Convert(spec model.NodeConfig) (streams.Flow, error) {
+	// marshal to json, unmarshal to config
+	data, err := json.Marshal(spec.Spec)
+	if err != nil {
+		return nil, err
+	}
+	conf := &Configuration{}
+	err = json.Unmarshal(data, conf)
+	if err != nil {
+		return nil, err
+	}
+	conf = NewConfiguration(conf.URL, conf.Params, conf.Headers, conf.MsgType)
+	src := NewWebSocketClient(*conf)
+	return src, nil
 }

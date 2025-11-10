@@ -59,6 +59,9 @@ type Event interface {
 
 	// GetTopic returns the topic of the event
 	GetTopic() string
+
+	// GetStatus returns the status of the event, if applicable
+	GetStatus() int
 }
 
 type GenericEvent struct {
@@ -69,12 +72,13 @@ type GenericEvent struct {
 	url     *url.URL
 	headers map[string]string
 	fields  map[string]string
+	status  int
 }
 
 var _ Event = (*GenericEvent)(nil)
 
-func NewGenericEvent(body []byte, rawUrl string, method string, headers, fields map[string]string) (*GenericEvent, error) {
-	event := &GenericEvent{}
+func NewGenericEvent(body []byte, rawUrl string, method string, headers, fields map[string]string, status int) (*GenericEvent, error) {
+	event := &GenericEvent{status: status}
 	event.body = body
 	event.method = method
 	parsed, err := url.Parse(rawUrl)
@@ -91,6 +95,9 @@ func NewGenericEvent(body []byte, rawUrl string, method string, headers, fields 
 		event.fields = fields
 	} else {
 		event.fields = make(map[string]string)
+	}
+	if event.status == 0 {
+		event.status = 200
 	}
 	return event, nil
 }
@@ -176,24 +183,29 @@ func (ae *GenericEvent) GetTopic() string {
 	return ""
 }
 
+// GetStatus returns the status of the event, if applicable
+func (ae *GenericEvent) GetStatus() int {
+	return ae.status
+}
+
 func NewEventFrom(value interface{}) Event {
 	switch body := value.(type) {
 	case Event:
 		return body
 	case string:
-		event, _ := NewGenericEvent([]byte(body), "", "", nil, nil)
+		event, _ := NewGenericEvent([]byte(body), "", "", nil, nil, 200)
 		return event
 	case []byte:
-		event, _ := NewGenericEvent(body, "", "", nil, nil)
+		event, _ := NewGenericEvent(body, "", "", nil, nil, 200)
 		return event
 	default:
-		event, _ := NewGenericEvent([]byte(fmt.Sprintf("%v", value)), "", "", nil, nil)
+		event, _ := NewGenericEvent([]byte(fmt.Sprintf("%v", value)), "", "", nil, nil, 200)
 		return event
 
 	}
 }
 
-func NewErrorEvent(err error) Event {
-	event, _ := NewGenericEvent([]byte(fmt.Sprintf("{\"error\": \"%s\"}", err)), "", "", nil, nil)
+func NewErrorEvent(err error, status int) Event {
+	event, _ := NewGenericEvent([]byte(fmt.Sprintf("{\"error\": \"%s\"}", err)), "", "", nil, nil, status)
 	return event
 }

@@ -94,8 +94,6 @@ func (s *HTTPSource) handleHttp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := r.Header.Get("Content-Type")
-
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.Conf.ProcessTimeout*int(time.Second)))
 	defer cancel()
@@ -130,9 +128,7 @@ func (s *HTTPSource) handleHttp(w http.ResponseWriter, r *http.Request) {
 	// Wait for processing result or error
 	select {
 	case result := <-outputChan:
-		w.Header().Set("Content-Type", contentType)
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(result.(string)))
+		s.writeMessage(w, result)
 	case err := <-errorChan:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	case <-ctx.Done():
@@ -140,7 +136,34 @@ func (s *HTTPSource) handleHttp(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *HTTPSource) writeMessage(w http.ResponseWriter, msg interface{}) {
+	var contentType string = "application/json"
+	var body []byte
+
+	switch v := msg.(type) {
+	case streams.Event:
+		body = v.GetBody()
+		contentType = v.GetContentType()
+		for k, val := range v.GetHeaders() {
+			w.Header().Set(k, val)
+		}
+	case []byte:
+		contentType = "application/octet-stream"
+		body = v
+	case string:
+		contentType = "text/plain"
+		body = []byte(v)
+	default:
+		s.logger.Warn("Received unsupported message type", slog.Any("type", v))
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
+	w.Write(body)
+
+}
+
 func (s *HTTPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) {
+	s.init(factory, s.handleHttpAsync)
 	go func() {
 		s.input = make(chan any)
 		s.factory.GenerateFlow(
@@ -148,8 +171,6 @@ func (s *HTTPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) 
 			sink,
 		)
 	}()
-	s.init(factory, s.handleHttpAsync)
-
 }
 
 func (s *HTTPSource) handleHttpAsync(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +225,7 @@ type HTTPConverter struct {
 
 func (c *HTTPConverter) Convert(input model.InputSpec) (sources.Source, error) {
 	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input)
+	data, err := json.Marshal(input.Spec)
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +234,7 @@ func (c *HTTPConverter) Convert(input model.InputSpec) (sources.Source, error) {
 	if err != nil {
 		return nil, err
 	}
+	conf = NewConfiguration(conf.Port, conf.ReadTimeout, conf.WriteTimeout, conf.ProcessTimeout, conf.MaxInputSize)
 	src := NewHTTPSource(conf)
 	return src, nil
 }

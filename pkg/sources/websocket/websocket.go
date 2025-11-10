@@ -177,7 +177,7 @@ type WebSocketConverter struct {
 
 func (c *WebSocketConverter) Convert(input model.InputSpec) (sources.Source, error) {
 	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input)
+	data, err := json.Marshal(input.Spec)
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +186,7 @@ func (c *WebSocketConverter) Convert(input model.InputSpec) (sources.Source, err
 	if err != nil {
 		return nil, err
 	}
+	conf = NewConfiguration(conf.Port, conf.Capacity)
 	src := NewWSSource(conf)
 	return src, nil
 }
