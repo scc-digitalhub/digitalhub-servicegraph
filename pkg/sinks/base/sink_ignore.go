@@ -1,6 +1,10 @@
-package extension
+package base
 
-import "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+import (
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+)
 
 // IgnoreSink represents a simple outbound connector that discards
 // all elements of a stream.
@@ -34,4 +38,17 @@ func (ignore *IgnoreSink) In() chan<- any {
 // AwaitCompletion is a no-op for the IgnoreSink.
 func (ignore *IgnoreSink) AwaitCompletion() {
 	// no-op
+}
+
+func init() {
+	sinks.RegistrySingleton.Register("ignore", &IgnoreConverter{})
+}
+
+type IgnoreConverter struct {
+	sinks.Converter
+}
+
+func (c *IgnoreConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
+	src := NewIgnoreSink()
+	return src, nil
 }

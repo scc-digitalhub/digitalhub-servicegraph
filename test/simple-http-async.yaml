@@ -1,0 +1,20 @@
+input:
+  kind: "http"
+  spec:
+    port: 8080
+output:
+  kind: "stdout"
+  spec: {}
+flow:
+  type: "sequence"
+  name: "example-sequence"
+  nodes:
+    - type: "service"
+      name: "example-service"
+      config:
+        kind: "http"
+        spec:
+          url: "https://httpbin.org/post"
+          method: "POST"
+          headers:
+            Content-Type: "text/plain"

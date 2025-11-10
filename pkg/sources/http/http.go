@@ -163,7 +163,6 @@ func (s *HTTPSource) writeMessage(w http.ResponseWriter, msg interface{}) {
 }
 
 func (s *HTTPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) {
-	s.init(factory, s.handleHttpAsync)
 	go func() {
 		s.input = make(chan any)
 		s.factory.GenerateFlow(
@@ -171,6 +170,7 @@ func (s *HTTPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) 
 			sink,
 		)
 	}()
+	s.init(factory, s.handleHttpAsync)
 }
 
 func (s *HTTPSource) handleHttpAsync(w http.ResponseWriter, r *http.Request) {

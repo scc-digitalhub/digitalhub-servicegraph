@@ -1,4 +1,4 @@
-package extension
+package base
 
 // drainChan discards all elements in the channel and returns when
 // it is closed.

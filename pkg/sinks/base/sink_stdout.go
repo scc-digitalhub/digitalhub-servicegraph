@@ -1,8 +1,10 @@
-package extension
+package base
 
 import (
 	"fmt"
 
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 )
 
@@ -31,7 +33,19 @@ func NewStdoutSink() *StdoutSink {
 func (stdout *StdoutSink) process() {
 	defer close(stdout.done)
 	for elem := range stdout.in {
-		fmt.Println(elem)
+		switch v := elem.(type) {
+		case error:
+			fmt.Printf("Error: %v\n", v)
+		case streams.Event:
+			fmt.Printf("Event Status: %v\n", v.GetStatus())
+			fmt.Printf("Event Body: %s\n", string(v.GetBody()))
+		case string:
+			fmt.Println(v)
+		case []byte:
+			fmt.Println(string(v))
+		default:
+			fmt.Println(v)
+		}
 	}
 }
 
@@ -43,4 +57,17 @@ func (stdout *StdoutSink) In() chan<- any {
 // AwaitCompletion blocks until the StdoutSink has processed all received data.
 func (stdout *StdoutSink) AwaitCompletion() {
 	<-stdout.done
+}
+
+func init() {
+	sinks.RegistrySingleton.Register("stdout", &StdOutConverter{})
+}
+
+type StdOutConverter struct {
+	sinks.Converter
+}
+
+func (c *StdOutConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
+	src := NewStdoutSink()
+	return src, nil
 }

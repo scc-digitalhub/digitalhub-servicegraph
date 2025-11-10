@@ -7,26 +7,25 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/httpclient"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/wsclient"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/base"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/http"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/websocket"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
-	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/extension"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/flow"
 )
 
 func main() {
-	// mainHttpSync()
-	// mainHttpAsync()
 	// mainWebSocketSync()
 	// mainWebSocketAsync()
-	simpleYaml()
+	// simpleYaml("test/simple-http-sync.yaml")
+	simpleYaml("test/simple-http-async.yaml")
 }
 
-func simpleYaml() {
+func simpleYaml(path string) {
 	modelReader, _ := model.NewReader()
 
-	file, err := os.Open("test/simple.yaml")
+	file, err := os.Open(path)
 	if err != nil {
 		panic(err)
 	}
@@ -40,12 +39,8 @@ func simpleYaml() {
 	app.Run()
 }
 
-func mainHttpSync() {
-	http.NewHTTPSource(http.NewConfiguration(8080, 0, 0, 0, 100000)).Start(&TestFactory{})
-}
-
 func mainHttpAsync() {
-	http.NewHTTPSource(http.NewConfiguration(8080, 0, 0, 0, 100000)).StartAsync(&TestFactory{}, extension.NewStdoutSink())
+	http.NewHTTPSource(http.NewConfiguration(8080, 0, 0, 0, 100000)).StartAsync(&TestFactory{}, base.NewStdoutSink())
 }
 
 func mainWebSocketSync() {
@@ -53,7 +48,7 @@ func mainWebSocketSync() {
 }
 
 func mainWebSocketAsync() {
-	websocket.NewWSSource(websocket.NewConfiguration(8080, 2)).StartAsync(&TestFactory{}, extension.NewStdoutSink())
+	websocket.NewWSSource(websocket.NewConfiguration(8080, 2)).StartAsync(&TestFactory{}, base.NewStdoutSink())
 }
 
 type TestFactory struct {
