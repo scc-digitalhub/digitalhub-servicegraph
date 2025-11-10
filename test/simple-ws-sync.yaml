@@ -1,0 +1,18 @@
+input:
+  kind: "websocket"
+  spec:
+    port: 8080
+    capacity: 2
+flow:
+  type: "sequence"
+  name: "example-sequence"
+  nodes:
+    - type: "service"
+      name: "example-service"
+      config:
+        kind: "http"
+        spec:
+          url: "https://httpbin.org/post"
+          method: "POST"
+          headers:
+            Content-Type: "text/plain"
