@@ -2,6 +2,7 @@ package flow
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
@@ -113,7 +114,7 @@ func Merge(outlets ...streams.Flow) streams.Flow {
 //
 // It will panic if provided less than two outlets, or if any of the outlets has an
 // element type other than T.
-func ZipWith[T, R any](combine func([]T) R, outlets ...streams.Outlet) streams.Flow {
+func ZipWith[T, R any](combine func([]T) R, outlets ...streams.Flow) streams.Flow {
 	// validate outlets length
 	if len(outlets) < 2 {
 		panic(fmt.Errorf("outlets length %d must be at least 2", len(outlets)))
@@ -176,4 +177,68 @@ func Flatten[T any](parallelism int) streams.Flow {
 	return NewFlatMap(func(element []T) []T {
 		return element
 	}, parallelism)
+}
+
+func MergeFunctionByName(name string) func([]interface{}) streams.Event {
+	switch strings.ToLower(name) {
+	case "concat":
+		return Concat
+	}
+	return nil
+}
+
+func Concat(values []interface{}) streams.Event {
+	if len(values) == 0 {
+		return streams.NewEventFrom("")
+	}
+	switch values[0].(type) {
+	case string:
+		strValues := make([]string, len(values))
+		for i, val := range values {
+			strValues[i] = fmt.Sprintf("%v", val)
+		}
+		return streams.NewEventFrom(strings.Join(strValues, ""))
+	case []byte:
+		// return merged byte slice
+		var totalLen int
+		for _, val := range values {
+			totalLen += len(val.([]byte))
+		}
+		merged := make([]byte, 0, totalLen)
+		for _, val := range values {
+			merged = append(merged, val.([]byte)...)
+		}
+		return streams.NewEventFrom(merged)
+	case streams.Event:
+		contentType := values[0].(streams.Event).GetContentType()
+		switch contentType {
+		case "text/plain":
+			strValues := make([]string, len(values))
+			for i, val := range values {
+				strValues[i] = fmt.Sprintf("%v", val.(streams.Event).GetBody())
+			}
+			return streams.NewEventFrom(strings.Join(strValues, ""))
+		case "application/json":
+			// merge as JSON array
+			jsonValues := make([]string, len(values))
+			for i, val := range values {
+				jsonValues[i] = string(val.(streams.Event).GetBody())
+			}
+			merged := fmt.Sprintf("[%s]", strings.Join(jsonValues, ","))
+			return streams.NewEventFrom([]byte(merged))
+		default:
+			// merge as byte slices
+			var totalLen int
+			for _, val := range values {
+				totalLen += len(val.(streams.Event).GetBody())
+			}
+			merged := make([]byte, 0, totalLen)
+			for _, val := range values {
+				merged = append(merged, val.(streams.Event).GetBody()...)
+			}
+			return streams.NewEventFrom(merged)
+		}
+	default:
+		return streams.NewEventFrom("")
+	}
 }

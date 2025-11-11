@@ -23,6 +23,12 @@ const (
 	AsyncMode ExecMode = "async"
 )
 
+type MergeMode string
+
+const (
+	MergeModeConcat MergeMode = "concat"
+)
+
 type Node struct {
 	Type      NodeType   `json,yaml:"type"`
 	Name      string     `json,yaml:"name,omitempty"`
@@ -47,6 +53,10 @@ type WebSocketSpec struct {
 	URL     string            `json,yaml:"url"`
 	Params  map[string]string `json,yaml:"params,omitempty"`
 	MsgType WSMsgType         `json,yaml:"msg_type,omitempty"`
+}
+
+type EnsembleSpec struct {
+	MergeMode MergeMode `json,yaml:"merge_mode,omitempty"`
 }
 
 type InputSpec struct {

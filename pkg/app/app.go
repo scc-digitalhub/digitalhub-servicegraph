@@ -6,6 +6,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/flow"
 )
 
 type App struct {
@@ -24,7 +25,7 @@ func (a *App) GenerateFlow(source streams.Source, sink streams.Sink) {
 	flow.To(sink)
 }
 
-func generateFlow(outlet streams.Passing, node *model.Node) streams.Flow {
+func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 	switch node.Type {
 	// TODO: implement other node types
 	case model.Sequence:
@@ -33,6 +34,14 @@ func generateFlow(outlet streams.Passing, node *model.Node) streams.Flow {
 			flow = generateFlow(outlet, &child)
 		}
 		return flow
+	case model.Ensemble:
+		fanOut := flow.FanOut(outlet, len(node.Nodes))
+
+		for i, child := range node.Nodes {
+			fanOut[i] = generateFlow(fanOut[i], &child)
+		}
+		mergeMode, _ := node.Config.Spec["merge_mode"].(string)
+		return flow.ZipWith(flow.MergeFunctionByName(mergeMode), fanOut...)
 	case model.Service:
 		converter, _ := nodes.RegistrySingleton.Get(node.Config.Kind)
 		flow, _ := converter.(nodes.Converter).Convert(node.Config)

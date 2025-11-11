@@ -39,13 +39,12 @@ type Source interface {
 // Implement this interface to create a custom stream transformation operator.
 type Flow interface {
 	Inlet
-	Outlet
 	// Via asynchronously streams data from the Flow's Outlet to the given Flow.
 	// It should return a new Flow that represents the combined pipeline.
-	Passing
 	// To streams data from the Flow's Outlet to the given Sink, and should block
 	// until the Sink has completed processing all data, which can be verified
 	// via the Sink's AwaitCompletion method.
+	Source
 	To(Sink)
 }
 

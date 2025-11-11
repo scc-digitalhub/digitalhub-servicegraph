@@ -296,7 +296,7 @@ func TestFlatten(t *testing.T) {
 func TestZipWith(t *testing.T) {
 	tests := []struct {
 		name        string
-		outlets     []streams.Outlet
+		outlets     []streams.Flow
 		shouldPanic bool
 		expected    []string
 	}{
@@ -306,39 +306,39 @@ func TestZipWith(t *testing.T) {
 		},
 		{
 			name:        "one-outlet",
-			outlets:     []streams.Outlet{chanSource([]int{1})},
+			outlets:     []streams.Flow{chanSource([]int{1})},
 			shouldPanic: true,
 		},
 		{
 			name:        "wrong-data-type",
-			outlets:     []streams.Outlet{chanSource([]string{"a"})},
+			outlets:     []streams.Flow{chanSource([]string{"a"})},
 			shouldPanic: true,
 		},
 		{
 			name:     "empty-outlets",
-			outlets:  []streams.Outlet{chanSource([]int{}), chanSource([]int{})},
+			outlets:  []streams.Flow{chanSource([]int{}), chanSource([]int{})},
 			expected: []string{},
 		},
 		{
 			name: "equal-length",
-			outlets: []streams.Outlet{chanSource([]int{1, 2, 3}),
+			outlets: []streams.Flow{chanSource([]int{1, 2, 3}),
 				chanSource([]int{1, 2, 3}), chanSource([]int{1, 2, 3})},
 			expected: []string{"[1 1 1]", "[2 2 2]", "[3 3 3]"},
 		},
 		{
 			name:     "first-longer",
-			outlets:  []streams.Outlet{chanSource([]int{1, 2, 3}), chanSource([]int{1})},
+			outlets:  []streams.Flow{chanSource([]int{1, 2, 3}), chanSource([]int{1})},
 			expected: []string{"[1 1]", "[2 0]", "[3 0]"},
 		},
 		{
 			name: "second-longer",
-			outlets: []streams.Outlet{chanSource([]int{1, 2}),
+			outlets: []streams.Flow{chanSource([]int{1, 2}),
 				chanSource([]int{1, 2, 3, 4, 5})},
 			expected: []string{"[1 1]", "[2 2]", "[0 3]", "[0 4]", "[0 5]"},
 		},
 		{
 			name: "mixed-length",
-			outlets: []streams.Outlet{chanSource([]int{1, 2}),
+			outlets: []streams.Flow{chanSource([]int{1, 2}),
 				chanSource([]int{1, 2, 3, 4, 5}), chanSource([]int{1, 2, 3})},
 			expected: []string{"[1 1 1]", "[2 2 2]", "[0 3 3]", "[0 4 0]", "[0 5 0]"},
 		},
@@ -368,11 +368,11 @@ func TestZipWith(t *testing.T) {
 	}
 }
 
-func chanSource[T any](data []T) streams.Outlet {
+func chanSource[T any](data []T) streams.Flow {
 	ch := make(chan any, len(data))
 	for _, value := range data {
 		ch <- value
 	}
 	close(ch)
-	return ext.NewChanSource(ch)
+	return ext.NewChanSource(ch).Via(flow.NewPassThrough())
 }

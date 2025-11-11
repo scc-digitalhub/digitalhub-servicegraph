@@ -19,7 +19,8 @@ func main() {
 	// simpleYaml("test/simple-http-sync.yaml")
 	// simpleYaml("test/simple-http-async.yaml")
 	// simpleYaml("test/simple-ws-sync.yaml")
-	simpleYaml("test/simple-ws-async.yaml")
+	// simpleYaml("test/simple-ws-async.yaml")
+	simpleYaml("test/simple-http-sync-ensemble.yaml")
 
 }
 
