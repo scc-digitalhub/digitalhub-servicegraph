@@ -42,19 +42,6 @@ type NodeConfig struct {
 	Spec map[string]interface{} `json,yaml:"spec,omitempty"`
 }
 
-type HTTPSpec struct {
-	URL     string            `json,yaml:"url"`
-	Method  string            `json,yaml:"method"`
-	Headers map[string]string `json,yaml:"headers,omitempty"`
-	Params  map[string]string `json,yaml:"params,omitempty"`
-}
-
-type WebSocketSpec struct {
-	URL     string            `json,yaml:"url"`
-	Params  map[string]string `json,yaml:"params,omitempty"`
-	MsgType WSMsgType         `json,yaml:"msg_type,omitempty"`
-}
-
 type EnsembleSpec struct {
 	MergeMode MergeMode `json,yaml:"merge_mode,omitempty"`
 }

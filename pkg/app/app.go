@@ -1,12 +1,15 @@
 package app
 
 import (
+	"fmt"
+
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/flow"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 type App struct {
@@ -14,10 +17,20 @@ type App struct {
 	graph *model.Graph
 }
 
-func NewApp(graph model.Graph) *App {
+var validNodeTypes = map[model.NodeType]bool{
+	model.Sequence: true,
+	model.Ensemble: true,
+	model.Split:    true,
+	model.Service:  true,
+}
+
+func NewApp(graph model.Graph) (*App, error) {
+	if err := validateGraph(&graph); err != nil {
+		return nil, err
+	}
 	return &App{
 		graph: &graph,
-	}
+	}, nil
 }
 
 func (a *App) GenerateFlow(source streams.Source, sink streams.Sink) {
@@ -66,6 +79,79 @@ func (a *App) Run() error {
 		source.StartAsync(a, sink)
 	} else {
 		source.Start(a)
+	}
+
+	return nil
+}
+
+// Enhanced validateGraph to validate nodes recursively
+func validateGraph(graph *model.Graph) error {
+	// validate input
+	inputValidator, err := sources.RegistrySingleton.Get(graph.Input.Kind)
+	if err != nil {
+		return err
+	}
+	err = inputValidator.(sources.Validator).Validate(*graph.Input)
+	if err != nil {
+		return err
+	}
+	// validate output
+	if graph.Output != nil {
+		outputValidator, err := sinks.RegistrySingleton.Get(graph.Output.Kind)
+		if err != nil {
+			return err
+		}
+		err = outputValidator.(sinks.Validator).Validate(*graph.Output)
+		if err != nil {
+			return err
+		}
+	}
+	return validateNode(graph.Flow)
+}
+
+func validateNode(node *model.Node) error {
+	if !validNodeTypes[node.Type] {
+		return fmt.Errorf("invalid node type: %s", node.Type)
+	}
+
+	switch node.Type {
+	case model.Sequence:
+		if len(node.Nodes) == 0 {
+			return fmt.Errorf("%s node must have child nodes", node.Type)
+		}
+	case model.Ensemble:
+		if len(node.Nodes) < 2 {
+			return fmt.Errorf("ensemble node must have at least two child nodes")
+		}
+		ensembleSpec := model.EnsembleSpec{}
+		err := util.Convert(node.Config.Spec, ensembleSpec)
+		if err != nil {
+			return err
+		}
+		if ensembleSpec.MergeMode != model.MergeModeConcat {
+			return fmt.Errorf("ensemble node must have a valid merge mode")
+		}
+	case model.Split:
+		if len(node.Nodes) < 2 {
+			return fmt.Errorf("split node must have at least two child nodes")
+		}
+		// TODO complete validation for split node
+	default:
+		// validate node config
+		nodeValidator, err := nodes.RegistrySingleton.Get(node.Config.Kind)
+		if err != nil {
+			return err
+		}
+		err = nodeValidator.(nodes.Validator).Validate(node.Config)
+		if err != nil {
+			return err
+		}
+
+		for _, child := range node.Nodes {
+			if err := validateNode(&child); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil

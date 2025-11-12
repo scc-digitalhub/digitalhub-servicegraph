@@ -1,7 +1,6 @@
 package websocket
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/extension"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 type WSSource struct {
@@ -168,25 +168,36 @@ func (s *WSSource) cleanConnection(conn *websocket.Conn, err error) {
 }
 
 func init() {
-	sources.RegistrySingleton.Register("websocket", &WebSocketConverter{})
+	sources.RegistrySingleton.Register("websocket", &WebSocketProcessor{})
 }
 
-type WebSocketConverter struct {
+type WebSocketProcessor struct {
 	sources.Converter
+	sources.Validator
 }
 
-func (c *WebSocketConverter) Convert(input model.InputSpec) (sources.Source, error) {
-	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input.Spec)
-	if err != nil {
-		return nil, err
-	}
+func (c *WebSocketProcessor) Convert(input model.InputSpec) (sources.Source, error) {
 	conf := &Configuration{}
-	err = json.Unmarshal(data, conf)
+	err := util.Convert(input.Spec, conf)
 	if err != nil {
 		return nil, err
 	}
 	conf = NewConfiguration(conf.Port, conf.Capacity)
 	src := NewWSSource(conf)
 	return src, nil
+}
+
+func (c *WebSocketProcessor) Validate(input model.InputSpec) error {
+	conf := &Configuration{}
+	err := util.Convert(input.Spec, conf)
+	if err != nil {
+		return err
+	}
+	if conf.Port <= 0 || conf.Port > 65535 {
+		return fmt.Errorf("invalid port number: %d", conf.Port)
+	}
+	if conf.Capacity <= 0 {
+		return fmt.Errorf("invalid capacity: %d", conf.Capacity)
+	}
+	return nil
 }

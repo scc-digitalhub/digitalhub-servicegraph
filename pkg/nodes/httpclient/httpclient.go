@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 // Http client takes one element calls the http api and produces.
@@ -163,14 +165,15 @@ func createClient() *http.Client {
 }
 
 func init() {
-	nodes.RegistrySingleton.Register("http", &HTTPConverter{})
+	nodes.RegistrySingleton.Register("http", &HTTPProcessor{})
 }
 
-type HTTPConverter struct {
+type HTTPProcessor struct {
 	nodes.Converter
+	nodes.Validator
 }
 
-func (c *HTTPConverter) Convert(spec model.NodeConfig) (streams.Flow, error) {
+func (c *HTTPProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
 	// marshal to json, unmarshal to config
 	data, err := json.Marshal(spec.Spec)
 	if err != nil {
@@ -184,4 +187,28 @@ func (c *HTTPConverter) Convert(spec model.NodeConfig) (streams.Flow, error) {
 	conf = NewConfiguration(conf.URL, conf.Method, conf.Params, conf.Headers, conf.numInstances)
 	src := NewHttpClient(*conf)
 	return src, nil
+}
+
+func (c *HTTPProcessor) Validate(spec model.NodeConfig) error {
+	// marshal to json, unmarshal to config
+	conf := &Configuration{}
+	err := util.Convert(spec.Spec, conf)
+
+	if err != nil {
+		return err
+	}
+	if conf.URL == "" {
+		return errors.New("httpclient node requires a valid url")
+	}
+
+	allowedMethods := []string{http.MethodConnect, http.MethodDelete, http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPatch, http.MethodPost, http.MethodPut, http.MethodTrace}
+	if conf.Method != "" && !slices.Contains(allowedMethods, strings.ToUpper(conf.Method)) {
+		return errors.New("httpclient node requires a valid method")
+	}
+
+	if conf.numInstances < 0 {
+		return errors.New("httpclient node requires a valid number of instances")
+	}
+
+	return nil
 }

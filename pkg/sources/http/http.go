@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -16,6 +15,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/extension"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 type HTTPSource struct {
@@ -216,25 +216,44 @@ func chainProcessor(input chan any, output chan any, factory sources.FlowFactory
 }
 
 func init() {
-	sources.RegistrySingleton.Register("http", &HTTPConverter{})
+	sources.RegistrySingleton.Register("http", &HTTPSourceProcessor{})
 }
 
-type HTTPConverter struct {
+type HTTPSourceProcessor struct {
 	sources.Converter
+	sources.Validator
 }
 
-func (c *HTTPConverter) Convert(input model.InputSpec) (sources.Source, error) {
-	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input.Spec)
-	if err != nil {
-		return nil, err
-	}
+func (c *HTTPSourceProcessor) Convert(input model.InputSpec) (sources.Source, error) {
 	conf := &Configuration{}
-	err = json.Unmarshal(data, conf)
+	err := util.Convert(input.Spec, conf)
 	if err != nil {
 		return nil, err
 	}
 	conf = NewConfiguration(conf.Port, conf.ReadTimeout, conf.WriteTimeout, conf.ProcessTimeout, conf.MaxInputSize)
 	src := NewHTTPSource(conf)
 	return src, nil
+}
+func (c *HTTPSourceProcessor) Validate(input model.InputSpec) error {
+	conf := &Configuration{}
+	err := util.Convert(input.Spec, conf)
+	if err != nil {
+		return err
+	}
+	if conf.Port <= 0 || conf.Port > 65535 {
+		return fmt.Errorf("invalid port number: %d", conf.Port)
+	}
+	if conf.ReadTimeout < 0 {
+		return fmt.Errorf("invalid read timeout: %d", conf.ReadTimeout)
+	}
+	if conf.WriteTimeout < 0 {
+		return fmt.Errorf("invalid write timeout: %d", conf.WriteTimeout)
+	}
+	if conf.ProcessTimeout < 0 {
+		return fmt.Errorf("invalid process timeout: %d", conf.ProcessTimeout)
+	}
+	if conf.MaxInputSize < 0 {
+		return fmt.Errorf("invalid max input size: %d", conf.MaxInputSize)
+	}
+	return nil
 }

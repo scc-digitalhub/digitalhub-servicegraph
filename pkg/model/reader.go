@@ -1,7 +1,6 @@
 package model
 
 import (
-	"fmt"
 	"io"
 	"log/slog"
 
@@ -33,36 +32,5 @@ func (r *Reader) ReadYAML(reader io.Reader) (*Graph, error) {
 		return nil, err
 	}
 
-	err = r.validateGraph(graph)
-	if err != nil {
-		return nil, err
-	}
-
 	return graph, nil
-}
-
-// Enhanced validateGraph to validate nodes recursively
-func (r *Reader) validateGraph(graph *Graph) error {
-	return r.validateNode(graph.Flow)
-}
-
-func (r *Reader) validateNode(node *Node) error {
-	validNodeTypes := map[NodeType]bool{
-		Sequence: true,
-		Ensemble: true,
-		Split:    true,
-		Service:  true,
-	}
-
-	if !validNodeTypes[node.Type] {
-		return fmt.Errorf("invalid node type: %s", node.Type)
-	}
-
-	for _, child := range node.Nodes {
-		if err := r.validateNode(&child); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }

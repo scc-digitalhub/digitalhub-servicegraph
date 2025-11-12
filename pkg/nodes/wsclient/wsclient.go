@@ -10,6 +10,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 // Verify WebSocketClient satisfies the Flow interface.
@@ -134,14 +135,15 @@ func (wsc *WebSocketClient) forwardMessage(event streams.Event) {
 }
 
 func init() {
-	nodes.RegistrySingleton.Register("websocket", &WSConverter{})
+	nodes.RegistrySingleton.Register("websocket", &WSProcessor{})
 }
 
-type WSConverter struct {
+type WSProcessor struct {
 	nodes.Converter
+	nodes.Validator
 }
 
-func (c *WSConverter) Convert(spec model.NodeConfig) (streams.Flow, error) {
+func (c *WSProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
 	// marshal to json, unmarshal to config
 	data, err := json.Marshal(spec.Spec)
 	if err != nil {
@@ -155,4 +157,21 @@ func (c *WSConverter) Convert(spec model.NodeConfig) (streams.Flow, error) {
 	conf = NewConfiguration(conf.URL, conf.Params, conf.Headers, conf.MsgType)
 	src := NewWebSocketClient(*conf)
 	return src, nil
+}
+
+func (c *WSProcessor) Validate(spec model.NodeConfig) error {
+	// marshal to json, unmarshal to config
+	conf := &Configuration{}
+	err := util.Convert(spec.Spec, conf)
+
+	if err != nil {
+		return err
+	}
+	if conf.URL == "" {
+		return fmt.Errorf("wsclient node requires a valid URL")
+	}
+	if conf.MsgType != ws.TextMessage && conf.MsgType != ws.BinaryMessage {
+		return fmt.Errorf("wsclient node requires a valid message type")
+	}
+	return nil
 }

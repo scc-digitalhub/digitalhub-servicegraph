@@ -18,3 +18,7 @@ var RegistrySingleton = Registry{
 type Converter interface {
 	Convert(spec model.NodeConfig) (streams.Flow, error)
 }
+
+type Validator interface {
+	Validate(spec model.NodeConfig) error
+}

@@ -37,6 +37,9 @@ func simpleYaml(path string) {
 	if err != nil {
 		panic(err)
 	}
-	app := app.NewApp(*graph)
+	app, err := app.NewApp(*graph)
+	if err != nil {
+		panic(err)
+	}
 	app.Run()
 }
