@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 
+	"github.com/ohler55/ojg/jp"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
@@ -20,7 +21,7 @@ type App struct {
 var validNodeTypes = map[model.NodeType]bool{
 	model.Sequence: true,
 	model.Ensemble: true,
-	model.Split:    true,
+	model.Switch:   true,
 	model.Service:  true,
 }
 
@@ -40,7 +41,6 @@ func (a *App) GenerateFlow(source streams.Source, sink streams.Sink) {
 
 func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 	switch node.Type {
-	// TODO: implement other node types
 	case model.Sequence:
 		var flow streams.Flow = nil
 		for _, child := range node.Nodes {
@@ -53,8 +53,32 @@ func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 		for i, child := range node.Nodes {
 			fanOut[i] = generateFlow(fanOut[i], &child)
 		}
-		mergeMode, _ := node.Config.Spec["merge_mode"].(string)
-		return flow.ZipWith(flow.MergeFunctionByName(mergeMode), fanOut...)
+		mergeMode := node.MergeMode
+		return flow.ZipWith(flow.MergeFunctionByName(string(mergeMode)), fanOut...)
+	case model.Switch:
+		var conditions []jp.Expr
+		for _, child := range node.Nodes {
+			x, _ := util.BuildJSONPathExpression(child.Condition)
+			conditions = append(conditions, x)
+		}
+		splitFlows := flow.SplitMulti(outlet, len(node.Nodes), func(in any) int {
+			for i, condition := range conditions {
+				res, err := util.EvaluateJSONPathOnExpr(in, condition)
+				if err != nil {
+					continue
+				}
+				if len(res) > 0 {
+					return i
+				}
+			}
+			// default to last flow if no condition matches
+			return len(conditions) - 1
+		})
+
+		for i, child := range node.Nodes {
+			splitFlows[i] = generateFlow(splitFlows[i], &child)
+		}
+		return flow.Merge(splitFlows...)
 	case model.Service:
 		converter, _ := nodes.RegistrySingleton.Get(node.Config.Kind)
 		flow, _ := converter.(nodes.Converter).Convert(node.Config)
@@ -119,23 +143,39 @@ func validateNode(node *model.Node) error {
 		if len(node.Nodes) == 0 {
 			return fmt.Errorf("%s node must have child nodes", node.Type)
 		}
+		for _, child := range node.Nodes {
+			if err := validateNode(&child); err != nil {
+				return err
+			}
+		}
 	case model.Ensemble:
 		if len(node.Nodes) < 2 {
 			return fmt.Errorf("ensemble node must have at least two child nodes")
 		}
-		ensembleSpec := model.EnsembleSpec{}
-		err := util.Convert(node.Config.Spec, ensembleSpec)
-		if err != nil {
-			return err
-		}
-		if ensembleSpec.MergeMode != model.MergeModeConcat {
+		if node.MergeMode != model.MergeModeConcat {
 			return fmt.Errorf("ensemble node must have a valid merge mode")
 		}
-	case model.Split:
-		if len(node.Nodes) < 2 {
-			return fmt.Errorf("split node must have at least two child nodes")
+		for _, child := range node.Nodes {
+			if err := validateNode(&child); err != nil {
+				return err
+			}
 		}
-		// TODO complete validation for split node
+	case model.Switch:
+		if len(node.Nodes) < 2 {
+			return fmt.Errorf("switch node must have at least two child nodes")
+		}
+		for _, child := range node.Nodes {
+			if child.Condition != "" {
+				if err := util.ValidateJSONPath(child.Condition); err != nil {
+					return fmt.Errorf("invalid JSONPath condition in switch node: %s", err.Error())
+				}
+			}
+		}
+		for _, child := range node.Nodes {
+			if err := validateNode(&child); err != nil {
+				return err
+			}
+		}
 	default:
 		// validate node config
 		nodeValidator, err := nodes.RegistrySingleton.Get(node.Config.Kind)

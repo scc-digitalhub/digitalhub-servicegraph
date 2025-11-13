@@ -130,8 +130,10 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 	}
 
 	resp, err := hc.httpClient.Do(httpReq)
-	if err != nil {
+	if err != nil && resp != nil {
 		return streams.NewErrorEvent(err, resp.StatusCode)
+	} else if err != nil {
+		return streams.NewErrorEvent(err, 500)
 	}
 	defer resp.Body.Close()
 

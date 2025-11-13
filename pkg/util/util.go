@@ -2,6 +2,11 @@ package util
 
 import (
 	"encoding/json"
+	"fmt"
+
+	"github.com/ohler55/ojg/jp"
+	"github.com/ohler55/ojg/oj"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 )
 
 func Convert(in, out interface{}) error {
@@ -15,4 +20,53 @@ func Convert(in, out interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func ValidateJSONPath(jsonPath string) error {
+	_, err := jp.ParseString(jsonPath)
+	if err != nil {
+		return fmt.Errorf("invalid json path: %s", err.Error())
+	}
+	return nil
+}
+
+func EvaluateJSONPath(jsonData any, jsonPath string) ([]any, error) {
+	// use jsonpath to evaluate the json path
+	x, err := BuildJSONPathExpression(jsonPath)
+	if err != nil {
+		return nil, err
+	}
+	return EvaluateJSONPathOnExpr(jsonData, x)
+}
+
+func BuildJSONPathExpression(jsonPath string) (jp.Expr, error) {
+	if jsonPath == "" {
+		jsonPath = "$"
+	}
+	expr, err := jp.ParseString(jsonPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid json path: %s", err.Error())
+	}
+	return expr, nil
+}
+
+func EvaluateJSONPathOnExpr(jsonData any, x jp.Expr) ([]any, error) {
+	var data []byte
+	switch v := jsonData.(type) {
+	case streams.Event:
+		data = v.GetBody()
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
+		return nil, fmt.Errorf("unsupported type for jsonData: %T", v)
+	}
+
+	obj, err := oj.Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	res := x.Get(obj)
+	return res, nil
 }

@@ -5,7 +5,7 @@ type NodeType string
 const (
 	Sequence NodeType = "sequence"
 	Ensemble NodeType = "ensemble"
-	Split    NodeType = "split"
+	Switch   NodeType = "switch"
 	Service  NodeType = "service"
 )
 
@@ -32,18 +32,15 @@ const (
 type Node struct {
 	Type      NodeType   `json,yaml:"type"`
 	Name      string     `json,yaml:"name,omitempty"`
-	Condition string     `json,yaml:"condition,omitempty"`
 	Nodes     []Node     `json,yaml:"nodes,omitempty"`
 	Config    NodeConfig `json,yaml:"config,omitempty"`
+	MergeMode MergeMode  `json,yaml:"merge_mode,omitempty"`
+	Condition string     `json,yaml:"condition,omitempty"`
 }
 
 type NodeConfig struct {
 	Kind string                 `json,yaml:"kind"`
 	Spec map[string]interface{} `json,yaml:"spec,omitempty"`
-}
-
-type EnsembleSpec struct {
-	MergeMode MergeMode `json,yaml:"merge_mode,omitempty"`
 }
 
 type InputSpec struct {

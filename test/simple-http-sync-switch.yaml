@@ -6,12 +6,12 @@ flow:
   type: "sequence"
   name: "example-sequence"
   nodes:
-    - type: "ensemble"
-      name: "example-ensemble"
-      merge_mode: "concat"
+    - type: "switch"
+      name: "example-switch"
       nodes:
       - type: "service"
         name: "service-1"
+        condition: '$[?$.value == "test1"]'
         config:
           kind: "http"
           spec:
@@ -21,6 +21,7 @@ flow:
               Content-Type: "text/plain"
       - type: "service"
         name: "service-2"
+        condition: '$[?$.value == "test2"]'
         config:
           kind: "http"
           spec:

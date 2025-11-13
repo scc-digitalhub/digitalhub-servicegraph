@@ -41,6 +41,26 @@ func Split[T any](outlet streams.Outlet, predicate func(T) bool) [2]streams.Flow
 	return [...]streams.Flow{condTrue, condFalse}
 }
 
+// Split splits the stream into several flows according to the given numeric predicate.
+// T specifies the incoming and outgoing element type.
+func SplitMulti(outlet streams.Outlet, count int, predicate func(in any) int) []streams.Flow {
+	cond := make([]streams.Flow, count)
+	for i := range count {
+		cond[i] = NewPassThrough()
+	}
+
+	go func() {
+		for element := range outlet.Out() {
+			cond[predicate(element)].In() <- element
+		}
+		for i := range cond {
+			close(cond[i].In())
+		}
+	}()
+
+	return cond
+}
+
 // FanOut creates a number of identical flows from the single outlet.
 // This can be useful when writing to multiple sinks is required.
 func FanOut(outlet streams.Outlet, magnitude int) []streams.Flow {
