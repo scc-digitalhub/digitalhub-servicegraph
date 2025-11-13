@@ -45,11 +45,26 @@ func NewConfiguration(url, method string, params, headers map[string]string, num
 }
 
 func (c *Configuration) Ground(in streams.Event) (streams.Event, error) {
-	// TODO ground jsonpath expressions in headers and fields to produce new URL
+	headers := in.GetHeaders()
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	for k, v := range c.Headers {
+		headers[k] = v
+	}
+
+	fields := in.GetFields()
+	if fields == nil {
+		fields = make(map[string]string)
+	}
+	for k, v := range c.Params {
+		fields[k] = v
+	}
+
 	url := c.URL
 	method := c.Method
 
-	event, err := streams.NewGenericEvent(in.GetBody(), url, method, in.GetHeaders(), in.GetFields(), 200)
+	event, err := streams.NewGenericEvent(in.GetBody(), url, method, headers, fields, 200)
 	if err != nil {
 		return nil, err
 	}
