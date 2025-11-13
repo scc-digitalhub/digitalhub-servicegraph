@@ -3,6 +3,7 @@ package util
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/ohler55/ojg/jp"
 	"github.com/ohler55/ojg/oj"
@@ -28,6 +29,15 @@ func ValidateJSONPath(jsonPath string) error {
 		return fmt.Errorf("invalid json path: %s", err.Error())
 	}
 	return nil
+}
+
+func NormalizeJSONPath(jsonPath string) string {
+	// expect json path to be a simple filter expression starting with $[?...]
+	// if it does not start with $, add it
+	if strings.HasPrefix(jsonPath, "$[?") {
+		return jsonPath
+	}
+	return "$[?" + jsonPath + "]"
 }
 
 func EvaluateJSONPath(jsonData any, jsonPath string) ([]any, error) {

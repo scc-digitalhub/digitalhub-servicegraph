@@ -166,6 +166,7 @@ func validateNode(node *model.Node) error {
 		}
 		for _, child := range node.Nodes {
 			if child.Condition != "" {
+				child.Condition = util.NormalizeJSONPath(child.Condition)
 				if err := util.ValidateJSONPath(child.Condition); err != nil {
 					return fmt.Errorf("invalid JSONPath condition in switch node: %s", err.Error())
 				}

@@ -11,7 +11,7 @@ flow:
       nodes:
       - type: "service"
         name: "service-1"
-        condition: '$[?$.value == "test1"]'
+        condition: '$.value == "test1"'
         config:
           kind: "http"
           spec:
@@ -21,7 +21,7 @@ flow:
               Content-Type: "text/plain"
       - type: "service"
         name: "service-2"
-        condition: '$[?$.value == "test2"]'
+        condition: '$.value == "test2"'
         config:
           kind: "http"
           spec:
