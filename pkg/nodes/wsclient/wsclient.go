@@ -102,18 +102,18 @@ func (wsc *WebSocketClient) stream() {
 }
 
 func (wsc *WebSocketClient) sink() {
-loop:
 	for {
 		messageType, payload, err := wsc.connection.ReadMessage()
 		if err != nil {
 			wsc.logger.Error("error in connection.ReadMessage", slog.Any("error", err))
-		} else {
-			// exit loop on CloseMessage
-			if messageType == ws.CloseMessage {
-				break loop
-			}
-			wsc.out <- streams.NewEventFrom(payload)
+			// stop reading on any error to avoid repeated reads on a failed connection
+			break
 		}
+		// exit loop on CloseMessage
+		if messageType == ws.CloseMessage {
+			break
+		}
+		wsc.out <- streams.NewEventFrom(payload)
 	}
 
 	wsc.logger.Info("Closing connector")

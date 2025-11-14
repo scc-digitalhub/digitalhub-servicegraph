@@ -30,14 +30,14 @@ func (s *HTTPSource) init(factory sources.FlowFactory, handleHttp func(w http.Re
 	s.factory = factory
 	// Create server with timeouts
 	serverPort := fmt.Sprintf(":%d", s.Conf.Port)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handleHttp)
 	server := &http.Server{
 		Addr:         serverPort,
 		ReadTimeout:  time.Duration(s.Conf.ReadTimeout * int(time.Second)),
 		WriteTimeout: time.Duration(s.Conf.WriteTimeout * int(time.Second)),
+		Handler:      mux,
 	}
-
-	// Register handler
-	http.HandleFunc("/", handleHttp)
 
 	// Channel to listen for errors coming from the server
 	serverErrors := make(chan error, 1)

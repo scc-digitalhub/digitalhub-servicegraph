@@ -368,6 +368,44 @@ func TestZipWith(t *testing.T) {
 	}
 }
 
+func TestZipWith_TwoOutlets_ProducesCombined(t *testing.T) {
+	sink := ext.NewChanSink(make(chan any, 2))
+	flow.ZipWith(func(zipped []int) string { return fmt.Sprintf("%v", zipped) }, chanSource([]int{1, 2}), chanSource([]int{10, 20})).To(sink)
+	var out []string
+	for e := range sink.Out {
+		out = append(out, e.(string))
+	}
+	if len(out) != 2 || out[0] != "[1 10]" || out[1] != "[2 20]" {
+		t.Fatalf("unexpected zip output: %v", out)
+	}
+}
+
+func TestZipWith_ThreeOutlets_TailShorter_ContainsZero(t *testing.T) {
+	sink := ext.NewChanSink(make(chan any, 10))
+	flow.ZipWith(func(zipped []int) string { return fmt.Sprintf("%v", zipped) }, chanSource([]int{1, 2, 3}), chanSource([]int{10}), chanSource([]int{100, 200, 300})).To(sink)
+	var out []string
+	for e := range sink.Out {
+		out = append(out, e.(string))
+	}
+	// at least one combined value should contain a zero for the short middle outlet
+	foundZero := false
+	for _, s := range out {
+		if strings.Contains(s, " 0 ") || strings.Contains(s, "[0 ") || strings.Contains(s, " 0]") {
+			foundZero = true
+			break
+		}
+	}
+	if !foundZero {
+		t.Fatalf("expected at least one zipped output to contain zero, got: %v", out)
+	}
+}
+
+func TestZipWith_PanicOnInsufficientOutlets(t *testing.T) {
+	assert.Panics(t, func() {
+		flow.ZipWith(func(z []int) string { return fmt.Sprintf("%v", z) })
+	})
+}
+
 func chanSource[T any](data []T) streams.Flow {
 	ch := make(chan any, len(data))
 	for _, value := range data {
@@ -375,4 +413,176 @@ func chanSource[T any](data []T) streams.Flow {
 	}
 	close(ch)
 	return ext.NewChanSource(ch).Via(flow.NewPassThrough())
+}
+
+// Merged util tests
+func TestMergeFunctionByNameAndConcat_StringAndBytesAndEvents_Merged(t *testing.T) {
+	// MergeFunctionByName
+	f := flow.MergeFunctionByName("concat")
+	if f == nil {
+		t.Fatalf("expected concat function for name concat")
+	}
+	if flow.MergeFunctionByName("unknown") != nil {
+		t.Fatalf("expected nil for unknown merge function")
+	}
+
+	// Concat empty
+	ev := flow.Concat([]interface{}{})
+	if string(ev.GetBody()) != "" {
+		t.Fatalf("expected empty body for empty values, got %s", string(ev.GetBody()))
+	}
+
+	// Concat strings
+	ev = flow.Concat([]interface{}{"a", "b", "c"})
+	if string(ev.GetBody()) != "abc" {
+		t.Fatalf("expected abc got %s", string(ev.GetBody()))
+	}
+
+	// Concat []byte
+	ev = flow.Concat([]interface{}{[]byte("x"), []byte("y")})
+	if string(ev.GetBody()) != "xy" {
+		t.Fatalf("expected xy got %s", string(ev.GetBody()))
+	}
+
+	// Concat streams.Event with text/plain
+	e1, _ := streams.NewGenericEvent([]byte("t1"), "", "", map[string]string{"content-type": "text/plain"}, nil, 200)
+	e2, _ := streams.NewGenericEvent([]byte("t2"), "", "", map[string]string{"content-type": "text/plain"}, nil, 200)
+	ev = flow.Concat([]interface{}{e1, e2})
+	if string(ev.GetBody()) != "[116 49][116 50]" {
+		t.Fatalf("expected numeric representation got %s", string(ev.GetBody()))
+	}
+
+	// Concat streams.Event with application/json
+	j1, _ := streams.NewGenericEvent([]byte(`{"a":1}`), "", "", map[string]string{"content-type": "application/json"}, nil, 200)
+	j2, _ := streams.NewGenericEvent([]byte(`{"b":2}`), "", "", map[string]string{"content-type": "application/json"}, nil, 200)
+	ev = flow.Concat([]interface{}{j1, j2})
+	if string(ev.GetBody()) != "[{\"a\":1},{\"b\":2}]" {
+		t.Fatalf("unexpected merged json: %s", string(ev.GetBody()))
+	}
+
+	// Concat streams.Event default (merge bytes)
+	d1, _ := streams.NewGenericEvent([]byte("d1"), "", "", nil, nil, 200)
+	d2, _ := streams.NewGenericEvent([]byte("d2"), "", "", nil, nil, 200)
+	ev = flow.Concat([]interface{}{d1, d2})
+	if string(ev.GetBody()) != "d1d2" {
+		t.Fatalf("expected d1d2 got %s", string(ev.GetBody()))
+	}
+
+	ev = flow.Concat([]interface{}{1, 2})
+	if string(ev.GetBody()) != "" {
+		t.Fatalf("expected empty body for default concat case, got %s", string(ev.GetBody()))
+	}
+
+}
+
+func TestUtilExtra_CoverageHelpers_Merged(t *testing.T) {
+	// Split two-way
+	in := make(chan any, 3)
+	in <- 1
+	in <- 2
+	in <- 3
+	close(in)
+	src := ext.NewChanSource(in)
+	parts := flow.Split(src, func(i int) bool { return i%2 == 0 })
+	var a, b []int
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for e := range parts[0].Out() {
+			a = append(a, e.(int))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for e := range parts[1].Out() {
+			b = append(b, e.(int))
+		}
+	}()
+	wg.Wait()
+	if len(a)+len(b) != 3 {
+		t.Fatalf("split produced wrong total count: %d+%d", len(a), len(b))
+	}
+
+	// FanOut duplicates to multiple flows
+	in2 := make(chan any, 2)
+	in2 <- "x"
+	in2 <- "y"
+	close(in2)
+	src2 := ext.NewChanSource(in2)
+	outs := flow.FanOut(src2, 2)
+	merged := flow.Merge(outs[0], outs[1])
+	var mergedValues []string
+	for e := range merged.Out() {
+		mergedValues = append(mergedValues, e.(string))
+	}
+	if len(mergedValues) != 4 {
+		t.Fatalf("fanout merge expected 4 values, got %d", len(mergedValues))
+	}
+
+	// RoundRobin should distribute values
+	in3 := make(chan any, 3)
+	in3 <- 1
+	in3 <- 2
+	in3 <- 3
+	close(in3)
+	src3 := ext.NewChanSource(in3)
+	rr := flow.RoundRobin(src3, 2)
+	mergedRR := flow.Merge(rr[0], rr[1])
+	var rrValues []int
+	for e := range mergedRR.Out() {
+		rrValues = append(rrValues, e.(int))
+	}
+	if len(rrValues) != 3 {
+		t.Fatalf("roundrobin expected 3 values, got %d", len(rrValues))
+	}
+
+	// Merge two simple outlets
+	aFlow := chanSource([]int{1, 2})
+	bFlow := chanSource([]int{3})
+	mergedAB := flow.Merge(aFlow, bFlow)
+	var mergedABVals []int
+	for e := range mergedAB.Out() {
+		mergedABVals = append(mergedABVals, e.(int))
+	}
+	if len(mergedABVals) != 3 {
+		t.Fatalf("merge expected 3 values, got %d", len(mergedABVals))
+	}
+
+	// ZipWith simple combine
+	sink := ext.NewChanSink(make(chan any, 2))
+	flow.ZipWith(func(zipped []int) string { return fmt.Sprintf("%v", zipped) }, chanSource([]int{1}), chanSource([]int{2})).To(sink)
+	var zipped []string
+	for e := range sink.Out {
+		zipped = append(zipped, e.(string))
+	}
+	if len(zipped) == 0 {
+		t.Fatalf("zipwith produced no output")
+	}
+
+	// Flatten
+	in4 := make(chan any, 2)
+	in4 <- []int{1, 2}
+	in4 <- []int{3}
+	close(in4)
+	src4 := ext.NewChanSource(in4)
+	flat := flow.Flatten[int](1)
+	// attach source first then To to avoid blocking
+	src4.Via(flat)
+	flat.To(ext.NewChanSink(make(chan any, 3)))
+
+	// SplitMulti out-of-range predicate should be ignored gracefully
+	in5 := make(chan any, 1)
+	in5 <- 99
+	close(in5)
+	src5 := ext.NewChanSource(in5)
+	partsMulti := flow.SplitMulti(src5, 3, func(in any) int { return 1 })
+	if len(partsMulti) != 3 {
+		t.Fatalf("splitmulti expected 3 parts, got %d", len(partsMulti))
+	}
+	// ensure drains
+	for _, p := range partsMulti {
+		for range p.Out() {
+		}
+	}
 }

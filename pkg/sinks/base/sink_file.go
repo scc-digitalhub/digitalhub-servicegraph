@@ -26,7 +26,7 @@ type FileSink struct {
 var _ streams.Sink = (*FileSink)(nil)
 
 // NewFileSink returns a new FileSink connector.
-func NewFileSink(fileName string, opts ...Opt) *FileSink {
+func NewFileSink(fileName string) *FileSink {
 	fileSink := &FileSink{
 		fileName: fileName,
 		in:       make(chan any),

@@ -1,0 +1,99 @@
+package model
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestNodeType(t *testing.T) {
+	assert.Equal(t, NodeType("sequence"), Sequence)
+	assert.Equal(t, NodeType("ensemble"), Ensemble)
+	assert.Equal(t, NodeType("switch"), Switch)
+	assert.Equal(t, NodeType("service"), Service)
+}
+
+func TestWSMsgType(t *testing.T) {
+	assert.Equal(t, WSMsgType("text"), TextMsg)
+	assert.Equal(t, WSMsgType("binary"), BinaryMsg)
+}
+
+func TestExecMode(t *testing.T) {
+	assert.Equal(t, ExecMode("sync"), SyncMode)
+	assert.Equal(t, ExecMode("async"), AsyncMode)
+}
+
+func TestMergeMode(t *testing.T) {
+	assert.Equal(t, MergeMode("concat"), MergeModeConcat)
+}
+
+func TestNode(t *testing.T) {
+	node := Node{
+		Type:      Sequence,
+		Name:      "test-node",
+		Nodes:     []Node{{Type: Service, Name: "child"}},
+		Config:    NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://example.com"}},
+		MergeMode: MergeModeConcat,
+		Condition: "true",
+	}
+
+	data, err := json.Marshal(node)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "test-node")
+}
+
+func TestNodeConfig(t *testing.T) {
+	config := NodeConfig{
+		Kind: "http",
+		Spec: map[string]interface{}{"url": "http://example.com"},
+	}
+
+	data, err := json.Marshal(config)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "http://example.com")
+}
+
+func TestInputSpec(t *testing.T) {
+	spec := InputSpec{
+		Kind: "http",
+		Spec: map[string]interface{}{"url": "http://input.com"},
+	}
+
+	data, err := json.Marshal(spec)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "http://input.com")
+}
+
+func TestOutputSpec(t *testing.T) {
+	spec := OutputSpec{
+		Kind: "http",
+		Spec: map[string]interface{}{"url": "http://output.com"},
+	}
+
+	data, err := json.Marshal(spec)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "http://output.com")
+}
+
+func TestGraph(t *testing.T) {
+	graph := Graph{
+		Input: &InputSpec{
+			Kind: "http",
+			Spec: map[string]interface{}{"url": "http://input.com"},
+		},
+		Flow: &Node{
+			Type: Sequence,
+			Name: "flow",
+		},
+		Output: &OutputSpec{
+			Kind: "http",
+			Spec: map[string]interface{}{"url": "http://output.com"},
+		},
+	}
+
+	data, err := json.Marshal(graph)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "http://input.com")
+	assert.Contains(t, string(data), "http://output.com")
+}

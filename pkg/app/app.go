@@ -125,9 +125,11 @@ func validateGraph(graph *model.Graph) error {
 		if err != nil {
 			return err
 		}
-		err = outputValidator.(sinks.Validator).Validate(*graph.Output)
-		if err != nil {
-			return err
+		if validator, ok := outputValidator.(sinks.Validator); ok {
+			err = validator.Validate(*graph.Output)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return validateNode(graph.Flow)
