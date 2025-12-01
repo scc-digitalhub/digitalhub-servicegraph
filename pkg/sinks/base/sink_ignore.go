@@ -46,9 +46,14 @@ func init() {
 
 type IgnoreConverter struct {
 	sinks.Converter
+	sinks.Validator
 }
 
 func (c *IgnoreConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
 	src := NewIgnoreSink()
 	return src, nil
+}
+
+func (c *IgnoreConverter) Validate(spec model.OutputSpec) error {
+	return nil
 }

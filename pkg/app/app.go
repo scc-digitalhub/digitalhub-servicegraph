@@ -130,6 +130,8 @@ func validateGraph(graph *model.Graph) error {
 			if err != nil {
 				return err
 			}
+		} else {
+			return fmt.Errorf("output kind %s does not support validation", graph.Output.Kind)
 		}
 	}
 	return validateNode(graph.Flow)

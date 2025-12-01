@@ -65,9 +65,14 @@ func init() {
 
 type StdOutConverter struct {
 	sinks.Converter
+	sinks.Validator
 }
 
 func (c *StdOutConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
 	src := NewStdoutSink()
 	return src, nil
+}
+
+func (c *StdOutConverter) Validate(spec model.OutputSpec) error {
+	return nil
 }

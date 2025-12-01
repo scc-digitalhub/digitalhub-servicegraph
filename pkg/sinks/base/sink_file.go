@@ -1,7 +1,6 @@
 package base
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,6 +8,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 type Configuration struct {
@@ -106,27 +106,33 @@ func (fs *FileSink) AwaitCompletion() {
 }
 
 func init() {
-	sinks.RegistrySingleton.Register("file", &FileConverter{})
+	sinks.RegistrySingleton.Register("file", &FileProcessor{})
 }
 
-type FileConverter struct {
+type FileProcessor struct {
 	sinks.Converter
+	sinks.Validator
 }
 
-func (c *FileConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
+func (c *FileProcessor) Convert(output model.OutputSpec) (streams.Sink, error) {
 	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input.Spec)
-	if err != nil {
-		return nil, err
-	}
 	conf := &Configuration{}
-	err = json.Unmarshal(data, conf)
+	err := util.Convert(output.Spec, conf)
 	if err != nil {
 		return nil, err
-	}
-	conf = &Configuration{
-		FileName: conf.FileName,
 	}
 	src := NewFileSink(conf.FileName)
 	return src, nil
+}
+
+func (c *FileProcessor) Validate(spec model.OutputSpec) error {
+	conf := &Configuration{}
+	err := util.Convert(spec.Spec, conf)
+	if err != nil {
+		return err
+	}
+	if conf.FileName == "" {
+		return fmt.Errorf("file_name is required for file sink")
+	}
+	return nil
 }

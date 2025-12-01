@@ -1,7 +1,6 @@
 package websocket
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -9,6 +8,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 // Sink represents a WebSocket sink connector.
@@ -95,21 +95,18 @@ func (s *WebSocketSink) AwaitCompletion() {
 }
 
 func init() {
-	sinks.RegistrySingleton.Register("websocket", &WebSocketConverter{})
+	sinks.RegistrySingleton.Register("websocket", &WebSocketPorocessor{})
 }
 
-type WebSocketConverter struct {
+type WebSocketPorocessor struct {
 	sinks.Converter
+	sinks.Validator
 }
 
-func (c *WebSocketConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
+func (c *WebSocketPorocessor) Convert(output model.OutputSpec) (streams.Sink, error) {
 	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input.Spec)
-	if err != nil {
-		return nil, err
-	}
 	conf := &Configuration{}
-	err = json.Unmarshal(data, conf)
+	err := util.Convert(output.Spec, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -119,4 +116,16 @@ func (c *WebSocketConverter) Convert(input model.OutputSpec) (streams.Sink, erro
 		return nil, err
 	}
 	return src, nil
+}
+
+func (c *WebSocketPorocessor) Validate(spec model.OutputSpec) error {
+	conf := &Configuration{}
+	err := util.Convert(spec.Spec, conf)
+	if err != nil {
+		return err
+	}
+	if conf.URL == "" {
+		return fmt.Errorf("url is required for websocket sink")
+	}
+	return nil
 }

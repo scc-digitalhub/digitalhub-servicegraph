@@ -2,7 +2,6 @@ package httpclient
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -177,12 +176,9 @@ type HTTPProcessor struct {
 
 func (c *HTTPProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
 	// marshal to json, unmarshal to config
-	data, err := json.Marshal(spec.Spec)
-	if err != nil {
-		return nil, err
-	}
 	conf := &Configuration{}
-	err = json.Unmarshal(data, conf)
+	err := util.Convert(spec.Spec, conf)
+
 	if err != nil {
 		return nil, err
 	}

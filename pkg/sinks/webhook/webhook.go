@@ -2,8 +2,8 @@ package webhook
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +13,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 type WebHook struct {
@@ -129,25 +130,34 @@ func (whc *WebHook) call(msg streams.Event) streams.Event {
 }
 
 func init() {
-	sinks.RegistrySingleton.Register("webhook", &WebHookConverter{})
+	sinks.RegistrySingleton.Register("webhook", &WebHookProcessor{})
 }
 
-type WebHookConverter struct {
+type WebHookProcessor struct {
 	sinks.Converter
+	sinks.Validator
 }
 
-func (c *WebHookConverter) Convert(input model.OutputSpec) (streams.Sink, error) {
+func (c *WebHookProcessor) Convert(output model.OutputSpec) (streams.Sink, error) {
 	// marshal to json, unmarshal to config
-	data, err := json.Marshal(input.Spec)
-	if err != nil {
-		return nil, err
-	}
 	conf := &Configuration{}
-	err = json.Unmarshal(data, conf)
+	err := util.Convert(output.Spec, conf)
 	if err != nil {
 		return nil, err
 	}
 	conf = NewConfiguration(conf.URL, conf.Params, conf.Headers, conf.Parallelism)
 	src := NewWebHook(*conf)
 	return src, nil
+}
+
+func (c *WebHookProcessor) Validate(spec model.OutputSpec) error {
+	conf := &Configuration{}
+	err := util.Convert(spec.Spec, conf)
+	if err != nil {
+		return err
+	}
+	if conf.URL == "" {
+		return fmt.Errorf("url is required for webhook sink")
+	}
+	return nil
 }

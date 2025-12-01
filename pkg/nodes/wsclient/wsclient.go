@@ -1,7 +1,6 @@
 package wsclient
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -144,13 +143,8 @@ type WSProcessor struct {
 }
 
 func (c *WSProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
-	// marshal to json, unmarshal to config
-	data, err := json.Marshal(spec.Spec)
-	if err != nil {
-		return nil, err
-	}
 	conf := &Configuration{}
-	err = json.Unmarshal(data, conf)
+	err := util.Convert(spec.Spec, conf)
 	if err != nil {
 		return nil, err
 	}
