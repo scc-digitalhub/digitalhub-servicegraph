@@ -95,15 +95,15 @@ func (s *WebSocketSink) AwaitCompletion() {
 }
 
 func init() {
-	sinks.RegistrySingleton.Register("websocket", &WebSocketPorocessor{})
+	sinks.RegistrySingleton.Register("websocket", &WebSocketProcessor{})
 }
 
-type WebSocketPorocessor struct {
+type WebSocketProcessor struct {
 	sinks.Converter
 	sinks.Validator
 }
 
-func (c *WebSocketPorocessor) Convert(output model.OutputSpec) (streams.Sink, error) {
+func (c *WebSocketProcessor) Convert(output model.OutputSpec) (streams.Sink, error) {
 	// marshal to json, unmarshal to config
 	conf := &Configuration{}
 	err := util.Convert(output.Spec, conf)
@@ -118,7 +118,7 @@ func (c *WebSocketPorocessor) Convert(output model.OutputSpec) (streams.Sink, er
 	return src, nil
 }
 
-func (c *WebSocketPorocessor) Validate(spec model.OutputSpec) error {
+func (c *WebSocketProcessor) Validate(spec model.OutputSpec) error {
 	conf := &Configuration{}
 	err := util.Convert(spec.Spec, conf)
 	if err != nil {

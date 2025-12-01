@@ -98,7 +98,7 @@ func TestWebSocketConverter_Convert(t *testing.T) {
 
 	wsURL := "ws" + srv.URL[len("http"):]
 
-	converter := &WebSocketConverter{}
+	converter := &WebSocketProcessor{}
 
 	spec := model.OutputSpec{
 		Spec: map[string]interface{}{

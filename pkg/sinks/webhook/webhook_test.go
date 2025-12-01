@@ -72,7 +72,7 @@ func TestCall_GroundError(t *testing.T) {
 }
 
 func TestWebHookConverter_Convert(t *testing.T) {
-	converter := &WebHookConverter{}
+	converter := &WebHookProcessor{}
 
 	spec := model.OutputSpec{
 		Spec: map[string]interface{}{
@@ -109,7 +109,7 @@ func TestWebHookConverter_Convert(t *testing.T) {
 }
 
 func TestWebHookConverter_Convert_InvalidSpec(t *testing.T) {
-	converter := &WebHookConverter{}
+	converter := &WebHookProcessor{}
 
 	spec := model.OutputSpec{
 		Spec: map[string]interface{}{

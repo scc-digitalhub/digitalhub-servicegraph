@@ -115,8 +115,8 @@ func TestFileSink_ProcessTypes(t *testing.T) {
 	_ = os.Remove(tmp)
 }
 
-func TestFileConverter_Convert(t *testing.T) {
-	converter := &FileConverter{}
+func TestFileProcessor_Convert(t *testing.T) {
+	converter := &FileProcessor{}
 
 	spec := model.OutputSpec{
 		Spec: map[string]interface{}{
