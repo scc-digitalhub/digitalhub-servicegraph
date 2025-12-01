@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/app"
@@ -15,14 +16,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run main.go <config.yaml>")
+		os.Exit(1)
+	}
 
-	// simpleYaml("test/simple-http-sync.yaml")
-	// simpleYaml("test/simple-http-async.yaml")
-	// simpleYaml("test/simple-ws-sync.yaml")
-	// simpleYaml("test/simple-ws-async.yaml")
-	// simpleYaml("test/simple-http-sync-ensemble.yaml")
-	simpleYaml("test/simple-http-sync-switch.yaml")
-
+	configPath := os.Args[1]
+	simpleYaml(configPath)
 }
 
 func simpleYaml(path string) {
