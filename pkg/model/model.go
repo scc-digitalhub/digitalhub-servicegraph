@@ -1,5 +1,10 @@
 package model
 
+import (
+	"github.com/ohler55/ojg/jp"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
+)
+
 type NodeType string
 
 const (
@@ -30,17 +35,39 @@ const (
 )
 
 type Node struct {
-	Type      NodeType   `json,yaml:"type"`
-	Name      string     `json,yaml:"name,omitempty"`
-	Nodes     []Node     `json,yaml:"nodes,omitempty"`
-	Config    NodeConfig `json,yaml:"config,omitempty"`
-	MergeMode MergeMode  `json,yaml:"merge_mode,omitempty"`
-	Condition string     `json,yaml:"condition,omitempty"`
+	Type                NodeType   `json,yaml:"type"`
+	Name                string     `json,yaml:"name,omitempty"`
+	Nodes               []Node     `json,yaml:"nodes,omitempty"`
+	Config              NodeConfig `json,yaml:"config,omitempty"`
+	MergeMode           MergeMode  `json,yaml:"merge_mode,omitempty"`
+	Condition           string     `json,yaml:"condition,omitempty"`
+	conditionExpression *jp.Expr
+}
+
+func (n *Node) ConditionExpression() jp.Expr {
+	if n.conditionExpression == nil {
+		exprText := n.Condition
+		if exprText == "" {
+			exprText = "$"
+		}
+		x, _ := util.BuildJSONPathExpression(exprText)
+		n.conditionExpression = &x
+	}
+	return *n.conditionExpression
 }
 
 type NodeConfig struct {
-	Kind string                 `json,yaml:"kind"`
-	Spec map[string]interface{} `json,yaml:"spec,omitempty"`
+	Kind        string                 `json,yaml:"kind"`
+	Spec        map[string]interface{} `json,yaml:"spec,omitempty"`
+	configCache *any
+}
+
+func (c *NodeConfig) ConfigCache() *any {
+	return c.configCache
+}
+
+func (c *NodeConfig) SetConfigCache(t any) {
+	c.configCache = &t
 }
 
 type InputSpec struct {

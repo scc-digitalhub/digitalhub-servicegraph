@@ -143,10 +143,15 @@ type WSProcessor struct {
 }
 
 func (c *WSProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
-	conf := &Configuration{}
-	err := util.Convert(spec.Spec, conf)
-	if err != nil {
-		return nil, err
+	var conf *Configuration
+	if cached := spec.ConfigCache(); cached != nil {
+		conf = (*cached).(*Configuration)
+	} else {
+		conf = &Configuration{}
+		err := util.Convert(spec.Spec, conf)
+		if err != nil {
+			return nil, err
+		}
 	}
 	conf = NewConfiguration(conf.URL, conf.Params, conf.Headers, conf.MsgType)
 	src := NewWebSocketClient(*conf)

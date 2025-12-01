@@ -58,7 +58,7 @@ func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 	case model.Switch:
 		var conditions []jp.Expr
 		for _, child := range node.Nodes {
-			x, _ := util.BuildJSONPathExpression(child.Condition)
+			x := child.ConditionExpression()
 			conditions = append(conditions, x)
 		}
 		splitFlows := flow.SplitMulti(outlet, len(node.Nodes), func(in any) int {
