@@ -10,7 +10,7 @@ import (
 )
 
 func makeClientWithServer(ts *httptest.Server) *HttpClient {
-	conf := Configuration{URL: ts.URL, Method: "GET", numInstances: 1}
+	conf := Configuration{URL: ts.URL, Method: "GET", NumInstances: 1}
 	hc := NewHttpClient(conf)
 	// replace default http client with one that hits the test server
 	hc.httpClient = *ts.Client()
@@ -35,7 +35,7 @@ func TestCall_Success(t *testing.T) {
 
 func TestCall_NetworkError(t *testing.T) {
 	// create a client that points to a non-routable address to force error
-	conf := Configuration{URL: "http://127.0.0.1:0", Method: "GET", numInstances: 1}
+	conf := Configuration{URL: "http://127.0.0.1:0", Method: "GET", NumInstances: 1}
 	hc := NewHttpClient(conf)
 	// call with an event
 	out := hc.call(streams.NewEventFrom([]byte("in")))

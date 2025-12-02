@@ -19,11 +19,11 @@ const (
 )
 
 type Configuration struct {
-	Port           int   `json,yaml:"port"`
-	ReadTimeout    int   `json,yaml:"read_timeout,omitempty"`
-	WriteTimeout   int   `json,yaml:"write_timeout,omitempty"`
-	ProcessTimeout int   `json,yaml:"process_timeout,omitempty"`
-	MaxInputSize   int64 `json,yaml:"max_input_size,omitempty"`
+	Port           int   `json:"port"`
+	ReadTimeout    int   `json:"read_timeout,omitempty"`
+	WriteTimeout   int   `json:"write_timeout,omitempty"`
+	ProcessTimeout int   `json:"process_timeout,omitempty"`
+	MaxInputSize   int64 `json:"max_input_size,omitempty"`
 }
 
 type HTTPEvent struct {

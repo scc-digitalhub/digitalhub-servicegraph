@@ -94,7 +94,13 @@ func (wsc *WebSocketClient) stream() {
 	go func() {
 		defer wg.Done()
 		for element := range wsc.in {
-			wsc.forwardMessage(streams.NewEventFrom(element))
+			// template processing for element
+			body, err := util.ConvertBody(element, wsc.conf.inTemplateObj)
+			if err != nil {
+				wsc.logger.Error("error processing input template", slog.Any("error", err))
+				continue
+			}
+			wsc.forwardMessage(streams.NewEventFrom(body))
 		}
 	}()
 
@@ -112,7 +118,13 @@ func (wsc *WebSocketClient) sink() {
 		if messageType == ws.CloseMessage {
 			break
 		}
-		wsc.out <- streams.NewEventFrom(payload)
+		// TODO template processing for payload
+		payloadObj, err := util.ConvertBody(payload, wsc.conf.outTemplateObj)
+		if err != nil {
+			wsc.logger.Error("error processing output template", slog.Any("error", err))
+			continue
+		}
+		wsc.out <- streams.NewEventFrom(payloadObj)
 	}
 
 	wsc.logger.Info("Closing connector")
@@ -143,18 +155,23 @@ type WSProcessor struct {
 }
 
 func (c *WSProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
-	var conf *Configuration
+	var newConf *Configuration
 	if cached := spec.ConfigCache(); cached != nil {
-		conf = (*cached).(*Configuration)
+		newConf = (*cached).(*Configuration)
 	} else {
-		conf = &Configuration{}
+		conf := &Configuration{}
 		err := util.Convert(spec.Spec, conf)
 		if err != nil {
 			return nil, err
 		}
+		conf.setInputTemplate(conf.InputTemplate)
+		conf.setOutputTemplate(conf.OutputTemplate)
+		newConf = NewConfiguration(conf.URL, conf.Params, conf.Headers, conf.MsgType)
+		newConf.inTemplateObj = conf.inTemplateObj
+		newConf.outTemplateObj = conf.outTemplateObj
+		spec.SetConfigCache(newConf)
 	}
-	conf = NewConfiguration(conf.URL, conf.Params, conf.Headers, conf.MsgType)
-	src := NewWebSocketClient(*conf)
+	src := NewWebSocketClient(*newConf)
 	return src, nil
 }
 

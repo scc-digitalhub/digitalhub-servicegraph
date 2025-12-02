@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
@@ -91,7 +92,7 @@ func (hc *HttpClient) transmit(inlet streams.Inlet) {
 func (hc *HttpClient) stream() {
 	var wg sync.WaitGroup
 	// create a pool of worker goroutines
-	for i := 0; i < hc.conf.numInstances; i++ {
+	for i := 0; i < hc.conf.NumInstances; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -108,16 +109,23 @@ func (hc *HttpClient) stream() {
 }
 
 func (hc *HttpClient) call(msg streams.Event) streams.Event {
+	// enrich message via grounding function
 	req, err := hc.conf.Ground(msg)
 	if err != nil {
 		return streams.NewErrorEvent(err, 500)
 	}
 
+	// process request body template if specified
 	var bodyReader *bytes.Reader = nil
 	if req.GetBody() != nil {
-		bodyReader = bytes.NewReader(req.GetBody())
+		body, err := util.ConvertBody(req.GetBody(), hc.conf.inTemplateObj)
+		if err != nil {
+			return streams.NewErrorEvent(err, 500)
+		}
+		bodyReader = bytes.NewReader(body.([]byte))
 	}
 
+	// create http request
 	httpReq, err := http.NewRequest(strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
 	if err != nil {
 		return streams.NewErrorEvent(err, 500)
@@ -127,7 +135,7 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 			httpReq.Header.Set(header, value)
 		}
 	}
-
+	// make http call
 	resp, err := hc.httpClient.Do(httpReq)
 	if err != nil && resp != nil {
 		return streams.NewErrorEvent(err, resp.StatusCode)
@@ -136,11 +144,17 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 	}
 	defer resp.Body.Close()
 
+	// read response body
 	resBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return streams.NewErrorEvent(err, 500)
 	}
-	return streams.NewEventFrom(resBody)
+	// process response body template if specified
+	body, err := util.ConvertBody(resBody, hc.conf.outTemplateObj)
+	if err != nil {
+		return streams.NewErrorEvent(err, 500)
+	}
+	return streams.NewEventFrom(body)
 }
 
 func createClient() *http.Client {
@@ -176,18 +190,24 @@ type HTTPProcessor struct {
 
 func (c *HTTPProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
 	// marshal to json, unmarshal to config
-	var conf *Configuration
+	var newConf *Configuration
 	if cached := spec.ConfigCache(); cached != nil {
-		conf = (*cached).(*Configuration)
+		newConf = (*cached).(*Configuration)
 	} else {
-		conf = &Configuration{}
+		conf := &Configuration{}
 		err := util.Convert(spec.Spec, conf)
 		if err != nil {
 			return nil, err
 		}
+		conf.setInputTemplate(conf.InputTemplate)
+		conf.setOutputTemplate(conf.OutputTemplate)
+		newConf = NewConfiguration(conf.URL, conf.Method, conf.Params, conf.Headers, conf.NumInstances)
+		newConf.inTemplateObj = conf.inTemplateObj
+		newConf.outTemplateObj = conf.outTemplateObj
+		spec.SetConfigCache(newConf)
 	}
-	conf = NewConfiguration(conf.URL, conf.Method, conf.Params, conf.Headers, conf.numInstances)
-	src := NewHttpClient(*conf)
+	src := NewHttpClient(*newConf)
+
 	return src, nil
 }
 
@@ -199,6 +219,18 @@ func (c *HTTPProcessor) Validate(spec model.NodeConfig) error {
 	if err != nil {
 		return err
 	}
+	if conf.InputTemplate != "" {
+		_, err := template.New("inputTemplate").Parse(conf.InputTemplate)
+		if err != nil {
+			return errors.New("httpclient node has invalid input_template: " + err.Error())
+		}
+	}
+	if conf.OutputTemplate != "" {
+		_, err := template.New("outputTemplate").Parse(conf.OutputTemplate)
+		if err != nil {
+			return errors.New("httpclient node has invalid output_template: " + err.Error())
+		}
+	}
 	if conf.URL == "" {
 		return errors.New("httpclient node requires a valid url")
 	}
@@ -208,7 +240,7 @@ func (c *HTTPProcessor) Validate(spec model.NodeConfig) error {
 		return errors.New("httpclient node requires a valid method")
 	}
 
-	if conf.numInstances < 0 {
+	if conf.NumInstances < 0 {
 		return errors.New("httpclient node requires a valid number of instances")
 	}
 

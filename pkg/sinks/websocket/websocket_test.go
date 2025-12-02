@@ -102,8 +102,8 @@ func TestWebSocketConverter_Convert(t *testing.T) {
 
 	spec := model.OutputSpec{
 		Spec: map[string]interface{}{
-			"url":     wsURL,
-			"msgType": float64(ws.TextMessage),
+			"url":      wsURL,
+			"msg_type": float64(ws.TextMessage),
 		},
 	}
 

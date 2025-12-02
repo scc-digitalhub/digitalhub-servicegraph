@@ -13,8 +13,8 @@ const (
 )
 
 type Configuration struct {
-	Port     int `json,yaml:"port"`
-	Capacity int `json,yaml:"capacity"`
+	Port     int `json:"port"`
+	Capacity int `json:"capacity"`
 }
 
 type SocketEvent struct {

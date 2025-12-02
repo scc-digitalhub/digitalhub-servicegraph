@@ -34,13 +34,13 @@ func TestNewConfiguration_Defaults(t *testing.T) {
 	if conf.Method != "POST" {
 		t.Errorf("expected default method POST, got %s", conf.Method)
 	}
-	if conf.numInstances != 1 {
-		t.Errorf("expected default numInstances 1, got %d", conf.numInstances)
+	if conf.NumInstances != 1 {
+		t.Errorf("expected default numInstances 1, got %d", conf.NumInstances)
 	}
 	// negative numInstances
 	conf = NewConfiguration("http://example", "GET", nil, nil, -1)
-	if conf.numInstances != 1 {
-		t.Errorf("expected numInstances 1 for negative, got %d", conf.numInstances)
+	if conf.NumInstances != 1 {
+		t.Errorf("expected numInstances 1 for negative, got %d", conf.NumInstances)
 	}
 	// nil maps
 	conf = NewConfiguration("http://example", "GET", nil, nil, 2)
@@ -119,8 +119,8 @@ func TestHTTPProcessorConvert(t *testing.T) {
 	if hc.conf.Params["p"] != "v" {
 		t.Errorf("expected param p=v, got %v", hc.conf.Params)
 	}
-	if hc.conf.numInstances != 1 {
-		t.Errorf("expected numInstances 1, got %d", hc.conf.numInstances)
+	if hc.conf.NumInstances != 2 {
+		t.Errorf("expected numInstances 2, got %d", hc.conf.NumInstances)
 	}
 }
 

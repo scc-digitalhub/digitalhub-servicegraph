@@ -5,10 +5,10 @@ import (
 )
 
 type Configuration struct {
-	URL     string            `json,yaml:"url"`
-	MsgType int               `json,yaml:"msg_type"`
-	Params  map[string]string `json,yaml:"params,omitempty"`
-	Headers map[string]string `json,yaml:"headers,omitempty"`
+	URL     string            `json:"url"`
+	MsgType int               `json:"msg_type"`
+	Params  map[string]string `json:"params,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 func NewConfiguration(url string, params, headers map[string]string, msgType int) *Configuration {

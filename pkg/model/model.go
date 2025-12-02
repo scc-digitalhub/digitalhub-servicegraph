@@ -35,12 +35,12 @@ const (
 )
 
 type Node struct {
-	Type                NodeType   `json,yaml:"type"`
-	Name                string     `json,yaml:"name,omitempty"`
-	Nodes               []Node     `json,yaml:"nodes,omitempty"`
-	Config              NodeConfig `json,yaml:"config,omitempty"`
-	MergeMode           MergeMode  `json,yaml:"merge_mode,omitempty"`
-	Condition           string     `json,yaml:"condition,omitempty"`
+	Type                NodeType   `json:"type"`
+	Name                string     `json:"name,omitempty"`
+	Nodes               []Node     `json:"nodes,omitempty"`
+	Config              NodeConfig `json:"config,omitempty"`
+	MergeMode           MergeMode  `json:"merge_mode,omitempty"`
+	Condition           string     `json:"condition,omitempty"`
 	conditionExpression *jp.Expr
 }
 
@@ -57,8 +57,8 @@ func (n *Node) ConditionExpression() jp.Expr {
 }
 
 type NodeConfig struct {
-	Kind        string                 `json,yaml:"kind"`
-	Spec        map[string]interface{} `json,yaml:"spec,omitempty"`
+	Kind        string                 `json:"kind"`
+	Spec        map[string]interface{} `json:"spec,omitempty"`
 	configCache *any
 }
 
@@ -71,16 +71,16 @@ func (c *NodeConfig) SetConfigCache(t any) {
 }
 
 type InputSpec struct {
-	Kind string                 `json,yaml:"kind"`
-	Spec map[string]interface{} `json,yaml:"spec,omitempty"`
+	Kind string                 `json:"kind"`
+	Spec map[string]interface{} `json:"spec,omitempty"`
 }
 type OutputSpec struct {
-	Kind string                 `json,yaml:"kind"`
-	Spec map[string]interface{} `json,yaml:"spec,omitempty"`
+	Kind string                 `json:"kind"`
+	Spec map[string]interface{} `json:"spec,omitempty"`
 }
 
 type Graph struct {
-	Input  *InputSpec  `json,yaml:"input"`
-	Flow   *Node       `json,yaml:"flow"`
-	Output *OutputSpec `json,yaml:"output,omitempty"`
+	Input  *InputSpec  `json:"input"`
+	Flow   *Node       `json:"flow"`
+	Output *OutputSpec `json:"output,omitempty"`
 }

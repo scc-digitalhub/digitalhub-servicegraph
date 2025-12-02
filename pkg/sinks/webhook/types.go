@@ -8,10 +8,10 @@ import (
 )
 
 type Configuration struct {
-	URL         string            `json,yaml:"url"`
-	Params      map[string]string `json,yaml:"params,omitempty"`
-	Headers     map[string]string `json,yaml:"headers,omitempty"`
-	Parallelism int               `json,yaml:"parallelism,omitempty"`
+	URL         string            `json:"url"`
+	Params      map[string]string `json:"params,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	Parallelism int               `json:"parallelism,omitempty"`
 }
 
 func NewConfiguration(url string, params, headers map[string]string, parallelism int) *Configuration {

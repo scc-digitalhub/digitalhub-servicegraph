@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"maps"
+	"text/template"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 )
@@ -11,11 +12,15 @@ const (
 )
 
 type Configuration struct {
-	URL          string            `json,yaml:"url"`
-	Method       string            `json,yaml:"method"`
-	Params       map[string]string `json,yaml:"params,omitempty"`
-	Headers      map[string]string `json,yaml:"headers,omitempty"`
-	numInstances int               `json,yaml:"num_instances,omitempty"`
+	URL            string            `json:"url"`
+	Method         string            `json:"method"`
+	Params         map[string]string `json:"params,omitempty"`
+	Headers        map[string]string `json:"headers,omitempty"`
+	NumInstances   int               `json:"num_instances,omitempty"`
+	InputTemplate  string            `json:"input_template,omitempty"`
+	OutputTemplate string            `json:"output_template,omitempty"`
+	inTemplateObj  *template.Template
+	outTemplateObj *template.Template
 }
 
 func NewConfiguration(url, method string, params, headers map[string]string, numInstances int) *Configuration {
@@ -26,9 +31,9 @@ func NewConfiguration(url, method string, params, headers map[string]string, num
 		Headers: make(map[string]string),
 	}
 	if numInstances > 0 {
-		conf.numInstances = numInstances
+		conf.NumInstances = numInstances
 	} else {
-		conf.numInstances = 1
+		conf.NumInstances = 1
 	}
 
 	if method != "" {
@@ -42,6 +47,19 @@ func NewConfiguration(url, method string, params, headers map[string]string, num
 	}
 
 	return conf
+}
+func (conf *Configuration) setInputTemplate(templateStr string) {
+	conf.InputTemplate = templateStr
+	if templateStr != "" {
+		conf.inTemplateObj, _ = template.New("inputTemplate").Parse(templateStr)
+	}
+}
+
+func (conf *Configuration) setOutputTemplate(templateStr string) {
+	conf.OutputTemplate = templateStr
+	if templateStr != "" {
+		conf.outTemplateObj, _ = template.New("outputTemplate").Parse(templateStr)
+	}
 }
 
 func (c *Configuration) Ground(in streams.Event) (streams.Event, error) {

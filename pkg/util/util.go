@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"text/template"
 
 	"github.com/ohler55/ojg/jp"
 	"github.com/ohler55/ojg/oj"
@@ -79,4 +80,28 @@ func EvaluateJSONPathOnExpr(jsonData any, x jp.Expr) ([]any, error) {
 	}
 	res := x.Get(obj)
 	return res, nil
+}
+
+func ConvertBody(in any, t *template.Template) (any, error) {
+	if t == nil {
+		return in, nil
+	}
+	var body []byte
+	switch bodyType := in.(type) {
+	case streams.Event:
+		body = bodyType.GetBody()
+	case string:
+		body = []byte(bodyType)
+	case []byte:
+		body = bodyType
+	default:
+		body = []byte(fmt.Sprintf("%v", bodyType))
+	}
+
+	var sb strings.Builder
+	err := t.Execute(&sb, string(body))
+	if err != nil {
+		return nil, err
+	}
+	return []byte(sb.String()), nil
 }
