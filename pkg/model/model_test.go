@@ -34,7 +34,6 @@ func TestNode(t *testing.T) {
 		Name:      "test-node",
 		Nodes:     []Node{{Type: Service, Name: "child"}},
 		Config:    NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://example.com"}},
-		MergeMode: MergeModeConcat,
 		Condition: "true",
 	}
 

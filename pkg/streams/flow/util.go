@@ -1,7 +1,10 @@
 package flow
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"html/template"
 	"strings"
 	"sync"
 
@@ -199,15 +202,32 @@ func Flatten[T any](parallelism int) streams.Flow {
 	}, parallelism)
 }
 
-func MergeFunctionByName(name string) func([]interface{}) streams.Event {
-	switch strings.ToLower(name) {
+func MergeFunctionFromSpec(spec map[string]any) func([]any) streams.Event {
+	mode, ok := spec["merge_mode"]
+	if !ok {
+		return nil
+	}
+	switch strings.ToLower(mode.(string)) {
 	case "concat":
 		return Concat
+	case "concat_template":
+		templateStr, ok := spec["template"].(string)
+		if !ok {
+			templateStr = ""
+		}
+		return func(values []any) streams.Event {
+			result, err := ConcatTemplate(values, templateStr)
+			if err != nil {
+				return streams.NewEventFrom("")
+			}
+			return result
+		}
 	}
+
 	return nil
 }
 
-func Concat(values []interface{}) streams.Event {
+func Concat(values []any) streams.Event {
 	if len(values) == 0 {
 		return streams.NewEventFrom("")
 	}
@@ -261,4 +281,55 @@ func Concat(values []interface{}) streams.Event {
 	default:
 		return streams.NewEventFrom("")
 	}
+}
+
+// ConcatTemplate takes a list of values (byte slice, string, or streams.Event),
+// unmarshals their contents as JSON to maps, concatenates them, and applies
+// a specified text template. Returns the result as a streams.Event object.
+func ConcatTemplate(values []any, templateStr string) (streams.Event, error) {
+	// Parse the template
+	tmpl, err := template.New("concat").Parse(templateStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	// Concatenate all values into a single map
+	concatenatedData := make([]map[string]any, 0)
+
+	for _, value := range values {
+		var data []byte
+
+		// Extract content based on type
+		switch v := value.(type) {
+		case streams.Event:
+			data = v.GetBody()
+		case []byte:
+			data = v
+		case string:
+			data = []byte(v)
+		default:
+			return nil, fmt.Errorf("unsupported value type: %T", v)
+		}
+
+		// Unmarshal to map
+		var jsonMap map[string]any
+		if err := json.Unmarshal(data, &jsonMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+		}
+
+		concatenatedData = append(concatenatedData, jsonMap)
+	}
+
+	// Apply template
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, concatenatedData); err != nil {
+		return nil, fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	// Create and return streams.Event
+	result, err := streams.NewGenericEvent(buf.Bytes(), "", "", nil, nil, 200)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create event: %w", err)
+	}
+	return result, nil
 }

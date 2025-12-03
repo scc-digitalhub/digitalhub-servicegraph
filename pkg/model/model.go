@@ -31,7 +31,8 @@ const (
 type MergeMode string
 
 const (
-	MergeModeConcat MergeMode = "concat"
+	MergeModeConcat         MergeMode = "concat"
+	MergeModeConcatTemplate MergeMode = "concat_template"
 )
 
 type Node struct {
@@ -39,7 +40,6 @@ type Node struct {
 	Name                string     `json:"name,omitempty"`
 	Nodes               []Node     `json:"nodes,omitempty"`
 	Config              NodeConfig `json:"config,omitempty"`
-	MergeMode           MergeMode  `json:"merge_mode,omitempty"`
 	Condition           string     `json:"condition,omitempty"`
 	conditionExpression *jp.Expr
 }

@@ -151,8 +151,8 @@ func TestValidateNode_SequenceEmpty(t *testing.T) {
 
 func TestValidateNode_EnsembleTooFewNodes(t *testing.T) {
 	node := &model.Node{
-		Type:      model.Ensemble,
-		MergeMode: model.MergeModeConcat,
+		Type:   model.Ensemble,
+		Config: model.NodeConfig{Spec: map[string]interface{}{"merge_mode": "concat"}},
 		Nodes: []model.Node{
 			{Type: model.Service, Config: model.NodeConfig{
 				Kind: "http",
@@ -169,8 +169,8 @@ func TestValidateNode_EnsembleTooFewNodes(t *testing.T) {
 
 func TestValidateNode_EnsembleInvalidMergeMode(t *testing.T) {
 	node := &model.Node{
-		Type:      model.Ensemble,
-		MergeMode: model.MergeMode("invalid"),
+		Type:   model.Ensemble,
+		Config: model.NodeConfig{Spec: map[string]interface{}{"merge_mode": "invalid"}},
 		Nodes: []model.Node{
 			{Type: model.Service, Config: model.NodeConfig{
 				Kind: "http",
@@ -262,8 +262,8 @@ func TestValidateNode_SequenceValid(t *testing.T) {
 
 func TestValidateNode_EnsembleValid(t *testing.T) {
 	node := &model.Node{
-		Type:      model.Ensemble,
-		MergeMode: model.MergeModeConcat,
+		Type:   model.Ensemble,
+		Config: model.NodeConfig{Spec: map[string]interface{}{"merge_mode": "concat"}},
 		Nodes: []model.Node{
 			{
 				Type: model.Service,
@@ -490,11 +490,6 @@ func TestIntegration_SimpleHTTPSyncEnsemble(t *testing.T) {
 
 	graph, err := reader.ReadYAML(file)
 	assert.NoError(t, err)
-
-	// Fix: manually set merge mode if not parsed correctly
-	if graph.Flow != nil && len(graph.Flow.Nodes) > 0 && graph.Flow.Nodes[0].Type == model.Ensemble {
-		graph.Flow.Nodes[0].MergeMode = model.MergeModeConcat
-	}
 
 	// Modify port and URLs to use mock server
 	graph.Input.Spec["port"] = 8083

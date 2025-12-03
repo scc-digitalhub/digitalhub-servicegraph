@@ -8,7 +8,9 @@ flow:
   nodes:
     - type: "ensemble"
       name: "example-ensemble"
-      merge_mode: "concat"
+      config:
+        spec:
+          merge_mode: "concat"
       nodes:
       - type: "service"
         name: "service-1"

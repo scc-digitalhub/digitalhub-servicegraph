@@ -16,4 +16,4 @@ flow:
           headers:
             Content-Type: "text/plain"
           input_template: |
-            `{ "message": "{{ . }}" }`
+            { "message": "{{ . }}" }

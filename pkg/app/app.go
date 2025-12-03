@@ -53,8 +53,8 @@ func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 		for i, child := range node.Nodes {
 			fanOut[i] = generateFlow(fanOut[i], &child)
 		}
-		mergeMode := node.MergeMode
-		return flow.ZipWith(flow.MergeFunctionByName(string(mergeMode)), fanOut...)
+		spec := node.Config.Spec
+		return flow.ZipWith(flow.MergeFunctionFromSpec(spec), fanOut...)
 	case model.Switch:
 		var conditions []jp.Expr
 		for _, child := range node.Nodes {
@@ -88,7 +88,10 @@ func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 }
 
 func (a *App) Run() error {
-	converter, _ := sources.RegistrySingleton.Get(a.graph.Input.Kind)
+	converter, err := sources.RegistrySingleton.Get(a.graph.Input.Kind)
+	if err != nil {
+		return fmt.Errorf("failed to get source converter for kind %s: %w", a.graph.Input.Kind, err)
+	}
 	source, err := converter.(sources.Converter).Convert(*a.graph.Input)
 	if err != nil {
 		return err
@@ -156,8 +159,22 @@ func validateNode(node *model.Node) error {
 		if len(node.Nodes) < 2 {
 			return fmt.Errorf("ensemble node must have at least two child nodes")
 		}
-		if node.MergeMode != model.MergeModeConcat {
+		spec := node.Config.Spec
+		if spec == nil {
+			return fmt.Errorf("ensemble node must have merge_mode in config spec")
+		}
+		mergeMode, ok := spec["merge_mode"].(string)
+		if !ok {
+			return fmt.Errorf("ensemble node must have merge_mode in config spec")
+		}
+
+		if model.MergeMode(mergeMode) != model.MergeModeConcat && model.MergeMode(mergeMode) != model.MergeModeConcatTemplate {
 			return fmt.Errorf("ensemble node must have a valid merge mode")
+		}
+		if model.MergeMode(mergeMode) == model.MergeModeConcatTemplate {
+			if _, ok := spec["template"].(string); !ok {
+				return fmt.Errorf("ensemble node with concat_template merge mode must have template in config spec")
+			}
 		}
 		for _, child := range node.Nodes {
 			if err := validateNode(&child); err != nil {

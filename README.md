@@ -147,8 +147,11 @@ Executes multiple child nodes in parallel and merges their outputs.
 **Configuration:**
 - `type`: "ensemble"
 - `name` (string): Optional node name
-- `merge_mode` (string): How to merge outputs ("concat")
 - `nodes` ([]Node): Array of child nodes
+- `config`:
+  -  `spec` (map[string]interface{}): Configuration options with
+     -  `merge_mode` (string): Merge mode ("concat" or "concat_template")
+     -  `template` (string): Go text template in case of `concat_template`. It accepts the slice of maps as input, where each map represents the JSON-structured ouputs of the corresponding branches.
 
 ### Switch Node
 Routes data to different child nodes based on conditions.

@@ -418,11 +418,11 @@ func chanSource[T any](data []T) streams.Flow {
 // Merged util tests
 func TestMergeFunctionByNameAndConcat_StringAndBytesAndEvents_Merged(t *testing.T) {
 	// MergeFunctionByName
-	f := flow.MergeFunctionByName("concat")
+	f := flow.MergeFunctionFromSpec(map[string]any{"merge_mode": "concat"})
 	if f == nil {
 		t.Fatalf("expected concat function for name concat")
 	}
-	if flow.MergeFunctionByName("unknown") != nil {
+	if flow.MergeFunctionFromSpec(map[string]any{"merge_mode": "unknown"}) != nil {
 		t.Fatalf("expected nil for unknown merge function")
 	}
 
