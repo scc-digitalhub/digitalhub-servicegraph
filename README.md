@@ -181,6 +181,8 @@ Makes HTTP requests.
 - `params` (map[string]string): Query parameters
 - `headers` (map[string]string): HTTP headers
 - `num_instances` (int): Number of concurrent instances
+- `input_template` (string): Go text template for input data
+- `output_template` (string): Go text template for output data
 
 #### WebSocket Service
 Sends WebSocket messages.
@@ -190,6 +192,8 @@ Sends WebSocket messages.
 - `msg_type` (int): Message type
 - `params` (map[string]string): Query parameters
 - `headers` (map[string]string): HTTP headers
+- `input_template` (string): Go text template for input data
+- `output_template` (string): Go text template for output data
 
 ## Configuration YAML Structure
 
