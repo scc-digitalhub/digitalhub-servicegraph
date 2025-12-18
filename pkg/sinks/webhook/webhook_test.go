@@ -5,6 +5,7 @@
 package webhook
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -28,7 +29,7 @@ func TestCall_Success(t *testing.T) {
 	wh.httpClient = *srv.Client()
 
 	// create an event and call
-	evt := streams.NewEventFrom([]byte("{}"))
+	evt := streams.NewEventFrom(context.Background(), []byte("{}"))
 	res := wh.call(evt)
 	if res == nil {
 		t.Fatalf("expected response event, got nil")
@@ -53,7 +54,7 @@ func TestCall_HTTPError(t *testing.T) {
 	wh := NewWebHook(*conf)
 	wh.httpClient = *srv.Client()
 
-	evt := streams.NewEventFrom([]byte("{}"))
+	evt := streams.NewEventFrom(context.Background(), []byte("{}"))
 	res := wh.call(evt)
 	if res == nil {
 		t.Fatalf("expected error event, got nil")
@@ -69,7 +70,7 @@ func TestCall_GroundError(t *testing.T) {
 	conf := NewConfiguration(":", nil, nil, 1)
 	wh := NewWebHook(*conf)
 
-	res := wh.call(streams.NewEventFrom(nil))
+	res := wh.call(streams.NewEventFrom(context.Background(), nil))
 	if res == nil {
 		t.Fatalf("expected error event, got nil")
 	}
@@ -181,7 +182,7 @@ func TestNewConfiguration_NilMaps(t *testing.T) {
 func TestConfiguration_Ground(t *testing.T) {
 	conf := NewConfiguration("http://test.com", map[string]string{"p1": "v1"}, map[string]string{"h1": "v1"}, 1)
 
-	in, err := streams.NewGenericEvent([]byte("body"), "url", "GET", map[string]string{"inh": "inv"}, map[string]string{"inf": "inv"}, 200)
+	in, err := streams.NewGenericEvent(context.Background(), []byte("body"), "url", "GET", map[string]string{"inh": "inv"}, map[string]string{"inf": "inv"}, 200)
 	if err != nil {
 		t.Fatalf("failed to create event: %v", err)
 	}
@@ -210,7 +211,7 @@ func TestConfiguration_Ground(t *testing.T) {
 func TestConfiguration_GroundEmpty(t *testing.T) {
 	conf := NewConfiguration("http://test.com", nil, nil, 1)
 
-	in, err := streams.NewGenericEvent([]byte("body"), "url", "GET", map[string]string{"inh": "inv"}, map[string]string{"inf": "inv"}, 200)
+	in, err := streams.NewGenericEvent(context.Background(), []byte("body"), "url", "GET", map[string]string{"inh": "inv"}, map[string]string{"inf": "inv"}, 200)
 	if err != nil {
 		t.Fatalf("failed to create event: %v", err)
 	}
@@ -233,7 +234,7 @@ func TestConfiguration_GroundEmpty(t *testing.T) {
 func TestConfiguration_Ground_NilHeadersFields(t *testing.T) {
 	conf := NewConfiguration("http://test.com", map[string]string{"p1": "v1"}, map[string]string{"h1": "v1"}, 1)
 
-	in, err := streams.NewGenericEvent([]byte("body"), "url", "GET", nil, nil, 200)
+	in, err := streams.NewGenericEvent(context.Background(), []byte("body"), "url", "GET", nil, nil, 200)
 	if err != nil {
 		t.Fatalf("failed to create event: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestConfiguration_Ground_NilHeadersFields(t *testing.T) {
 func TestConfiguration_Ground_EmptyConfMaps(t *testing.T) {
 	conf := NewConfiguration("http://test.com", nil, nil, 1)
 
-	in, err := streams.NewGenericEvent([]byte("body"), "url", "GET", map[string]string{"inh": "inv"}, map[string]string{"inf": "inv"}, 200)
+	in, err := streams.NewGenericEvent(context.Background(), []byte("body"), "url", "GET", map[string]string{"inh": "inv"}, map[string]string{"inf": "inv"}, 200)
 	if err != nil {
 		t.Fatalf("failed to create event: %v", err)
 	}
@@ -273,7 +274,7 @@ func TestConfiguration_Ground_EmptyConfMaps(t *testing.T) {
 func TestConfiguration_Ground_InvalidURL(t *testing.T) {
 	conf := NewConfiguration(":", nil, nil, 1) // invalid URL
 
-	in, err := streams.NewGenericEvent([]byte("body"), "url", "GET", nil, nil, 200)
+	in, err := streams.NewGenericEvent(context.Background(), []byte("body"), "url", "GET", nil, nil, 200)
 	if err != nil {
 		t.Fatalf("failed to create event: %v", err)
 	}

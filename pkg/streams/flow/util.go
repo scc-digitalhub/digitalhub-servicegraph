@@ -6,6 +6,7 @@ package flow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -222,7 +223,7 @@ func MergeFunctionFromSpec(spec map[string]any) func([]any) streams.Event {
 		return func(values []any) streams.Event {
 			result, err := ConcatTemplate(values, templateStr)
 			if err != nil {
-				return streams.NewEventFrom("")
+				return streams.NewEventFrom(context.TODO(), "")
 			}
 			return result
 		}
@@ -233,7 +234,7 @@ func MergeFunctionFromSpec(spec map[string]any) func([]any) streams.Event {
 
 func Concat(values []any) streams.Event {
 	if len(values) == 0 {
-		return streams.NewEventFrom("")
+		return streams.NewEventFrom(context.TODO(), "")
 	}
 	switch values[0].(type) {
 	case string:
@@ -241,7 +242,7 @@ func Concat(values []any) streams.Event {
 		for i, val := range values {
 			strValues[i] = fmt.Sprintf("%v", val)
 		}
-		return streams.NewEventFrom(strings.Join(strValues, ""))
+		return streams.NewEventFrom(context.TODO(), strings.Join(strValues, ""))
 	case []byte:
 		// return merged byte slice
 		var totalLen int
@@ -252,7 +253,7 @@ func Concat(values []any) streams.Event {
 		for _, val := range values {
 			merged = append(merged, val.([]byte)...)
 		}
-		return streams.NewEventFrom(merged)
+		return streams.NewEventFrom(context.TODO(), merged)
 	case streams.Event:
 		contentType := values[0].(streams.Event).GetContentType()
 		switch contentType {
@@ -261,7 +262,7 @@ func Concat(values []any) streams.Event {
 			for i, val := range values {
 				strValues[i] = fmt.Sprintf("%v", val.(streams.Event).GetBody())
 			}
-			return streams.NewEventFrom(strings.Join(strValues, ""))
+			return streams.NewEventFrom(values[0].(streams.Event).GetContext(), strings.Join(strValues, ""))
 		case "application/json":
 			// merge as JSON array
 			jsonValues := make([]string, len(values))
@@ -269,7 +270,7 @@ func Concat(values []any) streams.Event {
 				jsonValues[i] = string(val.(streams.Event).GetBody())
 			}
 			merged := fmt.Sprintf("[%s]", strings.Join(jsonValues, ","))
-			return streams.NewEventFrom([]byte(merged))
+			return streams.NewEventFrom(values[0].(streams.Event).GetContext(), []byte(merged))
 		default:
 			// merge as byte slices
 			var totalLen int
@@ -280,10 +281,10 @@ func Concat(values []any) streams.Event {
 			for _, val := range values {
 				merged = append(merged, val.(streams.Event).GetBody()...)
 			}
-			return streams.NewEventFrom(merged)
+			return streams.NewEventFrom(values[0].(streams.Event).GetContext(), merged)
 		}
 	default:
-		return streams.NewEventFrom("")
+		return streams.NewEventFrom(context.TODO(), "")
 	}
 }
 
@@ -299,6 +300,7 @@ func ConcatTemplate(values []any, templateStr string) (streams.Event, error) {
 
 	// Concatenate all values into a single map
 	concatenatedData := make([]map[string]any, 0)
+	ctx := context.TODO()
 
 	for _, value := range values {
 		var data []byte
@@ -307,6 +309,7 @@ func ConcatTemplate(values []any, templateStr string) (streams.Event, error) {
 		switch v := value.(type) {
 		case streams.Event:
 			data = v.GetBody()
+			ctx = v.GetContext()
 		case []byte:
 			data = v
 		case string:
@@ -331,7 +334,7 @@ func ConcatTemplate(values []any, templateStr string) (streams.Event, error) {
 	}
 
 	// Create and return streams.Event
-	result, err := streams.NewGenericEvent(buf.Bytes(), "", "", nil, nil, 200)
+	result, err := streams.NewGenericEvent(ctx, buf.Bytes(), "", "", nil, nil, 200)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event: %w", err)
 	}

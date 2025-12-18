@@ -5,6 +5,7 @@
 package util_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
@@ -43,6 +44,8 @@ func TestValidateAndNormalizeJSONPath(t *testing.T) {
 }
 
 func TestBuildAndEvaluateJSONPath(t *testing.T) {
+	ctx := context.Background()
+
 	expr, err := util.BuildJSONPathExpression("$.foo")
 	if err != nil {
 		t.Fatalf("BuildJSONPathExpression error: %v", err)
@@ -60,7 +63,7 @@ func TestBuildAndEvaluateJSONPath(t *testing.T) {
 	}
 
 	// test with streams.Event
-	ev := streams.NewEventFrom(`{"foo": 456}`)
+	ev := streams.NewEventFrom(ctx, `{"foo": 456}`)
 	res, err = util.EvaluateJSONPathOnExpr(ev, expr)
 	if err != nil {
 		t.Fatalf("EvaluateJSONPathOnExpr(event) error: %v", err)
@@ -99,7 +102,8 @@ func TestEvaluateJSONPathOnExpr_InvalidJSONBytes(t *testing.T) {
 
 func TestEvaluateJSONPathOnExpr_EventWithNonJSONBody(t *testing.T) {
 	expr, _ := util.BuildJSONPathExpression("$.foo")
-	ev := streams.NewEventFrom("plain text not json")
+	ctx := context.Background()
+	ev := streams.NewEventFrom(ctx, "plain text not json")
 	_, err := util.EvaluateJSONPathOnExpr(ev, expr)
 	if err == nil {
 		t.Fatalf("expected error when event body is not JSON")

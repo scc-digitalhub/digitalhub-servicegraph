@@ -5,6 +5,7 @@
 package websocket
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -81,7 +82,7 @@ func TestWebSocketSink_ProcessTypes(t *testing.T) {
 	// send different types
 	sink.In() <- "string"
 	sink.In() <- []byte("bytes")
-	ev, _ := streams.NewGenericEvent([]byte("body"), "url", "GET", nil, nil, 200)
+	ev, _ := streams.NewGenericEvent(context.Background(), []byte("body"), "url", "GET", nil, nil, 200)
 	sink.In() <- ev
 	sink.In() <- 123 // default
 	close(sink.In())

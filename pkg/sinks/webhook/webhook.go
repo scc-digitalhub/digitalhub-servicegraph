@@ -18,6 +18,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
+	otelhttp "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type WebHook struct {
@@ -66,7 +67,7 @@ func createClient() *http.Client {
 	}
 
 	return &http.Client{
-		Transport: transport,
+		Transport: otelhttp.NewTransport(transport),
 		Timeout:   30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			// Custom redirect handling
@@ -90,7 +91,8 @@ func (whc *WebHook) stream() {
 		go func() {
 			defer wg.Done()
 			for element := range whc.in {
-				whc.call(streams.NewEventFrom(element))
+				ctx := streams.ExtractContext(element)
+				whc.call(streams.NewEventFrom(ctx, element))
 			}
 		}()
 	}
@@ -100,9 +102,11 @@ func (whc *WebHook) stream() {
 }
 
 func (whc *WebHook) call(msg streams.Event) streams.Event {
+	defer util.FinalizeOTelSpans(msg.GetContext())
+
 	req, err := whc.conf.Ground(msg)
 	if err != nil {
-		return streams.NewErrorEvent(err, 500)
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
 
 	var bodyReader *bytes.Reader = nil
@@ -110,9 +114,9 @@ func (whc *WebHook) call(msg streams.Event) streams.Event {
 		bodyReader = bytes.NewReader(req.GetBody())
 	}
 
-	httpReq, err := http.NewRequest(strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
+	httpReq, err := http.NewRequestWithContext(msg.GetContext(), strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
 	if err != nil {
-		return streams.NewErrorEvent(err, 500)
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
 	if req.GetHeaders() != nil {
 		for header, value := range req.GetHeaders() {
@@ -122,15 +126,15 @@ func (whc *WebHook) call(msg streams.Event) streams.Event {
 
 	resp, err := whc.httpClient.Do(httpReq)
 	if err != nil {
-		return streams.NewErrorEvent(err, resp.StatusCode)
+		return streams.NewErrorEvent(msg.GetContext(), err, resp.StatusCode)
 	}
 	defer resp.Body.Close()
 
 	resBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return streams.NewErrorEvent(err, 500)
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
-	return streams.NewEventFrom(resBody)
+	return streams.NewEventFrom(msg.GetContext(), resBody)
 }
 
 func init() {

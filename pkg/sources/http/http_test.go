@@ -6,6 +6,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -97,12 +98,14 @@ func TestWriteMessage_ContentTypePropagation(t *testing.T) {
 	conf := NewConfiguration(0, 0, 0, 1, 1024)
 	src := NewHTTPSource(conf)
 
+	ctx := context.Background()
+
 	// create event with content-type header
 	headers := map[string]string{"content-type": "application/custom"}
-	evt, _ := streams.NewGenericEvent([]byte("data"), "", "", headers, nil, 200)
+	evt, _ := streams.NewGenericEvent(ctx, []byte("data"), "", "", headers, nil, 200)
 
 	w := httptest.NewRecorder()
-	src.writeMessage(w, evt)
+	src.writeMessage(ctx, w, evt)
 	res := w.Result()
 	if res.Header.Get("Content-Type") != "application/custom" {
 		t.Fatalf("expected Content-Type propagated, got %s", res.Header.Get("Content-Type"))
@@ -160,9 +163,10 @@ func TestWriteMessage_ByteAndStringAndDefault(t *testing.T) {
 	conf := NewConfiguration(0, 0, 0, 1, 1024)
 	src := NewHTTPSource(conf)
 
+	ctx := context.Background()
 	// []byte
 	w := httptest.NewRecorder()
-	src.writeMessage(w, []byte("bin"))
+	src.writeMessage(ctx, w, []byte("bin"))
 	res := w.Result()
 	if res.Header.Get("Content-Type") != "application/octet-stream" {
 		t.Fatalf("expected octet-stream, got %s", res.Header.Get("Content-Type"))
@@ -170,7 +174,7 @@ func TestWriteMessage_ByteAndStringAndDefault(t *testing.T) {
 
 	// string
 	w = httptest.NewRecorder()
-	src.writeMessage(w, "text")
+	src.writeMessage(ctx, w, "text")
 	res = w.Result()
 	if res.Header.Get("Content-Type") != "text/plain" {
 		t.Fatalf("expected text/plain, got %s", res.Header.Get("Content-Type"))
@@ -178,7 +182,7 @@ func TestWriteMessage_ByteAndStringAndDefault(t *testing.T) {
 
 	// default (unsupported type) - use an int
 	w = httptest.NewRecorder()
-	src.writeMessage(w, 12345)
+	src.writeMessage(ctx, w, 12345)
 	res = w.Result()
 	if res.Header.Get("Content-Type") == "" {
 		t.Fatalf("expected content-type to be set even for unsupported type")

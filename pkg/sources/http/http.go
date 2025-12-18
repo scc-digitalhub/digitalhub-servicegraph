@@ -6,6 +6,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -20,6 +21,8 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/extension"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
 )
 
 type HTTPSource struct {
@@ -30,12 +33,32 @@ type HTTPSource struct {
 	input   chan any
 }
 
-func (s *HTTPSource) init(factory sources.FlowFactory, handleHttp func(w http.ResponseWriter, r *http.Request)) {
+func (s *HTTPSource) init(factory sources.FlowFactory, handleHttp func(w http.ResponseWriter, r *http.Request)) error {
 	s.factory = factory
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 	// Create server with timeouts
 	serverPort := fmt.Sprintf(":%d", s.Conf.Port)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", handleHttp)
+	withOtel := util.IsOTelTracingEnabled()
+	if withOtel {
+		// Set up OpenTelemetry.
+		otelShutdown, err := util.SetupOTelSDK(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			err = errors.Join(err, otelShutdown(context.Background()))
+		}()
+		mux.Handle("/", otelhttp.NewHandler(http.HandlerFunc(handleHttp), "HTTPSource"))
+		s.logger.Info("OpenTelemetry instrumentation enabled for HTTP source")
+	} else {
+		mux.HandleFunc("/", handleHttp)
+		s.logger.Info("OpenTelemetry instrumentation disabled for HTTP source")
+	}
+
 	server := &http.Server{
 		Addr:         serverPort,
 		ReadTimeout:  time.Duration(s.Conf.ReadTimeout * int(time.Second)),
@@ -74,6 +97,7 @@ func (s *HTTPSource) init(factory sources.FlowFactory, handleHttp func(w http.Re
 			server.Close()
 		}
 	}
+	return nil
 }
 
 func NewHTTPSource(conf *Configuration) *HTTPSource {
@@ -87,8 +111,8 @@ func NewHTTPSource(conf *Configuration) *HTTPSource {
 	return source
 }
 
-func (s *HTTPSource) Start(factory sources.FlowFactory) {
-	s.init(factory, s.handleHttp)
+func (s *HTTPSource) Start(factory sources.FlowFactory) error {
+	return s.init(factory, s.handleHttp)
 }
 
 func (s *HTTPSource) handleHttp(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +144,7 @@ func (s *HTTPSource) handleHttp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
+	util.AddRequestToSpan(r.Context(), event.GetBody(), event.GetContentType())
 
 	// Send data for processing
 	select {
@@ -132,7 +157,7 @@ func (s *HTTPSource) handleHttp(w http.ResponseWriter, r *http.Request) {
 	// Wait for processing result or error
 	select {
 	case result := <-outputChan:
-		s.writeMessage(w, result)
+		s.writeMessage(r.Context(), w, result)
 	case err := <-errorChan:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	case <-ctx.Done():
@@ -140,7 +165,7 @@ func (s *HTTPSource) handleHttp(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *HTTPSource) writeMessage(w http.ResponseWriter, msg interface{}) {
+func (s *HTTPSource) writeMessage(ctx context.Context, w http.ResponseWriter, msg any) {
 	var contentType string = "application/json"
 	var body []byte
 
@@ -164,9 +189,11 @@ func (s *HTTPSource) writeMessage(w http.ResponseWriter, msg interface{}) {
 	w.WriteHeader(http.StatusOK)
 	w.Write(body)
 
+	util.AddResponseToSpan(ctx, body, contentType)
+
 }
 
-func (s *HTTPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) {
+func (s *HTTPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) error {
 	go func() {
 		s.input = make(chan any)
 		s.factory.GenerateFlow(
@@ -174,7 +201,7 @@ func (s *HTTPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) 
 			sink,
 		)
 	}()
-	s.init(factory, s.handleHttpAsync)
+	return s.init(factory, s.handleHttpAsync)
 }
 
 func (s *HTTPSource) handleHttpAsync(w http.ResponseWriter, r *http.Request) {
@@ -190,12 +217,18 @@ func (s *HTTPSource) handleHttpAsync(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.Conf.ProcessTimeout*int(time.Second)))
 	defer cancel()
 
+	newCtx := context.Background()
+	tracer := otel.GetTracerProvider().Tracer("")
+	spanCtx, _ := tracer.Start(newCtx, "HTTPSourceAsync")
+
 	// Read request event
-	event, err := NewHTTPEvent(r, s.Conf.MaxInputSize)
+	event, err := NewHTTPEventAsync(spanCtx, r, s.Conf.MaxInputSize)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
+
+	util.AddRequestToSpan(spanCtx, event.GetBody(), event.GetContentType())
 
 	// Send data for processing
 	select {

@@ -24,9 +24,7 @@ func main() {
 		fmt.Println("Usage: go run main.go <config.yaml>")
 		os.Exit(1)
 	}
-
 	configPath := os.Args[1]
-	// configPath := "test/simple-http-sync-template.yaml"
 	simpleYaml(configPath)
 }
 

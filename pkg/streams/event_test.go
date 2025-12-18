@@ -5,6 +5,7 @@
 package streams
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"testing"
@@ -12,10 +13,12 @@ import (
 )
 
 func TestNewGenericEvent_Basics(t *testing.T) {
+	ctx := context.Background()
+
 	headers := map[string]string{"content-type": "application/json", "x-k": "v"}
 	fields := map[string]string{"f1": "v1"}
 	body := []byte("{\"a\":1}")
-	e, err := NewGenericEvent(body, "http://example.com/path?x=1", "POST", headers, fields, 0)
+	e, err := NewGenericEvent(ctx, body, "http://example.com/path?x=1", "POST", headers, fields, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -40,32 +43,34 @@ func TestNewGenericEvent_Basics(t *testing.T) {
 }
 
 func TestNewEventFrom_Types(t *testing.T) {
-	ev := NewEventFrom("hello")
+	ctx := context.Background()
+	ev := NewEventFrom(ctx, "hello")
 	if string(ev.GetBody()) != "hello" {
 		t.Fatalf("string body mismatch: %s", string(ev.GetBody()))
 	}
 
 	b := []byte("bytes")
-	ev2 := NewEventFrom(b)
+	ev2 := NewEventFrom(ctx, b)
 	if string(ev2.GetBody()) != "bytes" {
 		t.Fatalf("byte body mismatch: %s", string(ev2.GetBody()))
 	}
 
-	orig, _ := NewGenericEvent([]byte("X"), "", "GET", nil, nil, 201)
-	ev3 := NewEventFrom(orig)
+	orig, _ := NewGenericEvent(ctx, []byte("X"), "", "GET", nil, nil, 201)
+	ev3 := NewEventFrom(ctx, orig)
 	if ev3.GetStatus() != 201 {
 		t.Fatalf("event passthrough status mismatch: %d", ev3.GetStatus())
 	}
 
-	ev4 := NewEventFrom(123)
+	ev4 := NewEventFrom(ctx, 123)
 	if string(ev4.GetBody()) == "" {
 		t.Fatalf("expected non-empty body for int input")
 	}
 }
 
 func TestNewErrorEvent(t *testing.T) {
+	ctx := context.Background()
 	err := errors.New("boom")
-	ev := NewErrorEvent(err, 502)
+	ev := NewErrorEvent(ctx, err, 502)
 	if ev.GetStatus() != 502 {
 		t.Fatalf("error event status mismatch: %d", ev.GetStatus())
 	}
@@ -75,15 +80,17 @@ func TestNewErrorEvent(t *testing.T) {
 }
 
 func TestGenericEvent_ID_Headers_Fields_Timestamp_And_ErrorURL(t *testing.T) {
+	ctx := context.Background()
+
 	// invalid URL returns error
-	if _, err := NewGenericEvent([]byte("x"), ":http://bad-url", "GET", nil, nil, 0); err == nil {
+	if _, err := NewGenericEvent(ctx, []byte("x"), ":http://bad-url", "GET", nil, nil, 0); err == nil {
 		t.Fatalf("expected error for invalid url")
 	}
 
 	headers := map[string]string{"content-type": "text/plain", "h1": "v1"}
 	fields := map[string]string{"f1": "fv1"}
 	body := []byte("payload")
-	ge, err := NewGenericEvent(body, "http://example.com/hey", "POST", headers, fields, 0)
+	ge, err := NewGenericEvent(ctx, body, "http://example.com/hey", "POST", headers, fields, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,8 +143,9 @@ func TestGenericEvent_ID_Headers_Fields_Timestamp_And_ErrorURL(t *testing.T) {
 }
 
 func TestGenericEvent_EmptyHeadersAndFields(t *testing.T) {
+	ctx := context.Background()
 	// Create without headers/fields
-	ge, err := NewGenericEvent([]byte("x"), "", "", nil, nil, 0)
+	ge, err := NewGenericEvent(ctx, []byte("x"), "", "", nil, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +178,8 @@ func TestGenericEvent_EmptyHeadersAndFields(t *testing.T) {
 }
 
 func TestGetHeaderAndField_Explicit(t *testing.T) {
-	ge1, _ := NewGenericEvent([]byte("x"), "", "", map[string]string{"a": "b"}, map[string]string{"f": "g"}, 0)
+	ctx := context.Background()
+	ge1, _ := NewGenericEvent(ctx, []byte("x"), "", "", map[string]string{"a": "b"}, map[string]string{"f": "g"}, 0)
 	if ge1.GetHeader("a") != "b" {
 		t.Fatalf("expected header a=b")
 	}
@@ -185,7 +194,7 @@ func TestGetHeaderAndField_Explicit(t *testing.T) {
 		t.Fatalf("expected empty for missing field")
 	}
 
-	ge2, _ := NewGenericEvent([]byte("y"), "", "", nil, nil, 0)
+	ge2, _ := NewGenericEvent(ctx, []byte("y"), "", "", nil, nil, 0)
 	if ge2.GetHeader("any") != "" {
 		t.Fatalf("expected empty header for nil headers")
 	}
@@ -195,9 +204,10 @@ func TestGetHeaderAndField_Explicit(t *testing.T) {
 }
 
 func TestHeaderField_Stress(t *testing.T) {
+	ctx := context.Background()
 	headers := map[string]string{"k1": "v1", "content-type": "ct"}
 	fields := map[string]string{"ff": "vv"}
-	ge, _ := NewGenericEvent([]byte("z"), "", "", headers, fields, 0)
+	ge, _ := NewGenericEvent(ctx, []byte("z"), "", "", headers, fields, 0)
 
 	for i := 0; i < 10; i++ {
 		_ = ge.GetHeader("k1")

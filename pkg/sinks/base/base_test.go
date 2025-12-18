@@ -5,6 +5,7 @@
 package base
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -29,7 +30,7 @@ func TestStdoutSink_ProcessTypes(t *testing.T) {
 	s.In() <- "string"
 	s.In() <- []byte("bytes")
 	s.In() <- fmt.Errorf("error")
-	ev, _ := streams.NewGenericEvent([]byte("body"), "url", "GET", nil, nil, 200)
+	ev, _ := streams.NewGenericEvent(context.Background(), []byte("body"), "url", "GET", nil, nil, 200)
 	s.In() <- ev
 	s.In() <- 123 // default
 	close(s.In())
@@ -69,7 +70,7 @@ func TestFileSink_WithEventTypes(t *testing.T) {
 	_ = os.Remove(tmp)
 	fs := NewFileSink(tmp)
 	// send a streams.Event (create minimal event)
-	ev, err := streams.NewGenericEvent([]byte("evt-body"), "", "", nil, nil, 200)
+	ev, err := streams.NewGenericEvent(context.Background(), []byte("evt-body"), "", "", nil, nil, 200)
 	if err != nil {
 		t.Fatalf("failed to create event: %v", err)
 	}

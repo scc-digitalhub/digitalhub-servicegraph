@@ -10,6 +10,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 // StdoutSink represents a simple outbound connector that writes
@@ -43,6 +44,7 @@ func (stdout *StdoutSink) process() {
 		case streams.Event:
 			fmt.Printf("Event Status: %v\n", v.GetStatus())
 			fmt.Printf("Event Body: %s\n", string(v.GetBody()))
+			util.FinalizeOTelSpans(v.GetContext())
 		case string:
 			fmt.Println(v)
 		case []byte:

@@ -5,6 +5,7 @@
 package wsclient
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -34,6 +35,7 @@ type WebSocketClient struct {
 	out        chan any
 	connection *ws.Conn
 	logger     *slog.Logger
+	ctx        context.Context
 }
 
 func NewWebSocketClient(conf Configuration) *WebSocketClient {
@@ -42,6 +44,7 @@ func NewWebSocketClient(conf Configuration) *WebSocketClient {
 		in:     make(chan any),
 		out:    make(chan any),
 		logger: slog.Default(),
+		ctx:    context.Background(),
 	}
 
 	// create a new client connection
@@ -104,7 +107,7 @@ func (wsc *WebSocketClient) stream() {
 				wsc.logger.Error("error processing input template", slog.Any("error", err))
 				continue
 			}
-			wsc.forwardMessage(streams.NewEventFrom(body))
+			wsc.forwardMessage(streams.NewEventFrom(wsc.ctx, body))
 		}
 	}()
 
@@ -128,7 +131,7 @@ func (wsc *WebSocketClient) sink() {
 			wsc.logger.Error("error processing output template", slog.Any("error", err))
 			continue
 		}
-		wsc.out <- streams.NewEventFrom(payloadObj)
+		wsc.out <- streams.NewEventFrom(wsc.ctx, payloadObj)
 	}
 
 	wsc.logger.Info("Closing connector")

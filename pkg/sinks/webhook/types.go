@@ -57,7 +57,7 @@ func (c *Configuration) Ground(in streams.Event) (streams.Event, error) {
 		fields[k] = v
 	}
 
-	event, err := streams.NewGenericEvent(in.GetBody(), url, http.MethodPost, headers, fields, 200)
+	event, err := streams.NewGenericEvent(in.GetContext(), in.GetBody(), url, http.MethodPost, headers, fields, 200)
 	if err != nil {
 		return nil, err
 	}

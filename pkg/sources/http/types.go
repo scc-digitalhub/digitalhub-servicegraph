@@ -5,6 +5,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -35,10 +36,27 @@ type HTTPEvent struct {
 	r         *http.Request
 	body      []byte
 	timestamp time.Time
+	ctx       context.Context
 }
 
 func NewHTTPEvent(r *http.Request, maxIputSize int64) (*HTTPEvent, error) {
-	event := &HTTPEvent{}
+	event := &HTTPEvent{ctx: r.Context()}
+
+	// Read request body with max size limit
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxIputSize))
+	if err != nil {
+		// http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return nil, errors.New("failed to read request body")
+	}
+	defer r.Body.Close()
+	event.body = body
+
+	event.r = r
+	event.timestamp = time.Now()
+	return event, nil
+}
+func NewHTTPEventAsync(ctx context.Context, r *http.Request, maxIputSize int64) (*HTTPEvent, error) {
+	event := &HTTPEvent{ctx: ctx}
 
 	// Read request body with max size limit
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxIputSize))
@@ -111,6 +129,11 @@ func (e *HTTPEvent) GetFields() map[string]string {
 func (e *HTTPEvent) GetTimestamp() time.Time {
 	return e.timestamp
 }
+
+func (e *HTTPEvent) GetContext() context.Context {
+	return e.ctx
+}
+
 func NewConfiguration(port, readTimeout, writeTimeout, processTimeout int, maxInputSize int64) *Configuration {
 
 	newConfiguration := &Configuration{

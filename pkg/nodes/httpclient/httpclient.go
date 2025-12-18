@@ -19,6 +19,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
+	otelhttp "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Http client takes one element calls the http api and produces.
@@ -101,7 +102,8 @@ func (hc *HttpClient) stream() {
 		go func() {
 			defer wg.Done()
 			for element := range hc.in {
-				hc.out <- hc.call(streams.NewEventFrom(element))
+				ctx := streams.ExtractContext(element)
+				hc.out <- hc.call(streams.NewEventFrom(ctx, element))
 			}
 		}()
 	}
@@ -116,7 +118,7 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 	// enrich message via grounding function
 	req, err := hc.conf.Ground(msg)
 	if err != nil {
-		return streams.NewErrorEvent(err, 500)
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
 
 	// process request body template if specified
@@ -124,15 +126,15 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 	if req.GetBody() != nil {
 		body, err := util.ConvertBody(req.GetBody(), hc.conf.inTemplateObj)
 		if err != nil {
-			return streams.NewErrorEvent(err, 500)
+			return streams.NewErrorEvent(msg.GetContext(), err, 500)
 		}
 		bodyReader = bytes.NewReader(body.([]byte))
 	}
 
 	// create http request
-	httpReq, err := http.NewRequest(strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
+	httpReq, err := http.NewRequestWithContext(msg.GetContext(), strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
 	if err != nil {
-		return streams.NewErrorEvent(err, 500)
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
 	if req.GetHeaders() != nil {
 		for header, value := range req.GetHeaders() {
@@ -142,23 +144,23 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 	// make http call
 	resp, err := hc.httpClient.Do(httpReq)
 	if err != nil && resp != nil {
-		return streams.NewErrorEvent(err, resp.StatusCode)
+		return streams.NewErrorEvent(msg.GetContext(), err, resp.StatusCode)
 	} else if err != nil {
-		return streams.NewErrorEvent(err, 500)
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
 	defer resp.Body.Close()
 
 	// read response body
 	resBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return streams.NewErrorEvent(err, 500)
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
 	// process response body template if specified
 	body, err := util.ConvertBody(resBody, hc.conf.outTemplateObj)
 	if err != nil {
-		return streams.NewErrorEvent(err, 500)
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
-	return streams.NewEventFrom(body)
+	return streams.NewEventFrom(msg.GetContext(), body)
 }
 
 func createClient() *http.Client {
@@ -171,7 +173,7 @@ func createClient() *http.Client {
 	}
 
 	return &http.Client{
-		Transport: transport,
+		Transport: otelhttp.NewTransport(transport),
 		Timeout:   30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			// Custom redirect handling

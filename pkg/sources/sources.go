@@ -11,6 +11,6 @@ type FlowFactory interface {
 }
 
 type Source interface {
-	Start(generator FlowFactory)
-	StartAsync(generator FlowFactory, sink streams.Sink)
+	Start(generator FlowFactory) error
+	StartAsync(generator FlowFactory, sink streams.Sink) error
 }

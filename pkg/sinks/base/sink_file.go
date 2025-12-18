@@ -76,6 +76,9 @@ func (fs *FileSink) process() {
 			stringElement = string(v)
 		case fmt.Stringer:
 			stringElement = v.String()
+		case streams.Event:
+			util.FinalizeOTelSpans(v.GetContext())
+			stringElement = string(v.GetBody())
 		default:
 			slog.Warn("Discarded stream element",
 				slog.String("type", fmt.Sprintf("%T", v)))

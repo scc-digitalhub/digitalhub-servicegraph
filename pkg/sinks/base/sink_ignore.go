@@ -8,6 +8,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 // IgnoreSink represents a simple outbound connector that discards
@@ -31,7 +32,12 @@ func NewIgnoreSink() *IgnoreSink {
 }
 
 func (ignore *IgnoreSink) process() {
-	drainChan(ignore.in)
+	for elem := range ignore.in {
+		switch elem := elem.(type) {
+		case streams.Event:
+			util.FinalizeOTelSpans(elem.GetContext())
+		}
+	}
 }
 
 // In returns the input channel of the IgnoreSink connector.

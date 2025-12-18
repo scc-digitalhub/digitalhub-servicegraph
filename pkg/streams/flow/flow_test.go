@@ -5,6 +5,7 @@
 package flow_test
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -421,6 +422,7 @@ func chanSource[T any](data []T) streams.Flow {
 
 // Merged util tests
 func TestMergeFunctionByNameAndConcat_StringAndBytesAndEvents_Merged(t *testing.T) {
+	ctx := context.Background()
 	// MergeFunctionByName
 	f := flow.MergeFunctionFromSpec(map[string]any{"merge_mode": "concat"})
 	if f == nil {
@@ -449,24 +451,24 @@ func TestMergeFunctionByNameAndConcat_StringAndBytesAndEvents_Merged(t *testing.
 	}
 
 	// Concat streams.Event with text/plain
-	e1, _ := streams.NewGenericEvent([]byte("t1"), "", "", map[string]string{"content-type": "text/plain"}, nil, 200)
-	e2, _ := streams.NewGenericEvent([]byte("t2"), "", "", map[string]string{"content-type": "text/plain"}, nil, 200)
+	e1, _ := streams.NewGenericEvent(ctx, []byte("t1"), "", "", map[string]string{"content-type": "text/plain"}, nil, 200)
+	e2, _ := streams.NewGenericEvent(ctx, []byte("t2"), "", "", map[string]string{"content-type": "text/plain"}, nil, 200)
 	ev = flow.Concat([]interface{}{e1, e2})
 	if string(ev.GetBody()) != "[116 49][116 50]" {
 		t.Fatalf("expected numeric representation got %s", string(ev.GetBody()))
 	}
 
 	// Concat streams.Event with application/json
-	j1, _ := streams.NewGenericEvent([]byte(`{"a":1}`), "", "", map[string]string{"content-type": "application/json"}, nil, 200)
-	j2, _ := streams.NewGenericEvent([]byte(`{"b":2}`), "", "", map[string]string{"content-type": "application/json"}, nil, 200)
+	j1, _ := streams.NewGenericEvent(ctx, []byte(`{"a":1}`), "", "", map[string]string{"content-type": "application/json"}, nil, 200)
+	j2, _ := streams.NewGenericEvent(ctx, []byte(`{"b":2}`), "", "", map[string]string{"content-type": "application/json"}, nil, 200)
 	ev = flow.Concat([]interface{}{j1, j2})
 	if string(ev.GetBody()) != "[{\"a\":1},{\"b\":2}]" {
 		t.Fatalf("unexpected merged json: %s", string(ev.GetBody()))
 	}
 
 	// Concat streams.Event default (merge bytes)
-	d1, _ := streams.NewGenericEvent([]byte("d1"), "", "", nil, nil, 200)
-	d2, _ := streams.NewGenericEvent([]byte("d2"), "", "", nil, nil, 200)
+	d1, _ := streams.NewGenericEvent(ctx, []byte("d1"), "", "", nil, nil, 200)
+	d2, _ := streams.NewGenericEvent(ctx, []byte("d2"), "", "", nil, nil, 200)
 	ev = flow.Concat([]interface{}{d1, d2})
 	if string(ev.GetBody()) != "d1d2" {
 		t.Fatalf("expected d1d2 got %s", string(ev.GetBody()))

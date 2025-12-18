@@ -5,6 +5,7 @@
 package httpclient
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 func TestNewConfigurationDefaultsAndGround(t *testing.T) {
 	conf := NewConfiguration("http://example", "GET", map[string]string{"p": "v"}, map[string]string{"h": "v"}, 2)
-	ev, err := streams.NewGenericEvent([]byte("body"), "", "", nil, nil, 200)
+	ev, err := streams.NewGenericEvent(context.Background(), []byte("body"), "", "", nil, nil, 200)
 	if err != nil {
 		t.Fatalf("failed to create event: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestNewConfiguration_Defaults(t *testing.T) {
 
 func TestConfiguration_Ground_Error(t *testing.T) {
 	conf := NewConfiguration(":", "GET", nil, nil, 1) // invalid URL
-	ev, _ := streams.NewGenericEvent([]byte("body"), "", "", nil, nil, 200)
+	ev, _ := streams.NewGenericEvent(context.Background(), []byte("body"), "", "", nil, nil, 200)
 	_, err := conf.Ground(ev)
 	if err == nil {
 		t.Fatalf("expected error for invalid URL")

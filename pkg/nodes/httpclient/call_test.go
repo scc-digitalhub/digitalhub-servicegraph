@@ -5,6 +5,7 @@
 package httpclient
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +31,7 @@ func TestCall_Success(t *testing.T) {
 
 	hc := makeClientWithServer(ts)
 	// prepare an event with body
-	ev := streams.NewEventFrom([]byte("in"))
+	ev := streams.NewEventFrom(context.Background(), []byte("in"))
 	out := hc.call(ev)
 	if string(out.GetBody()) != "ok-body" {
 		t.Fatalf("expected ok-body, got: %s", string(out.GetBody()))
@@ -42,7 +43,7 @@ func TestCall_NetworkError(t *testing.T) {
 	conf := Configuration{URL: "http://127.0.0.1:0", Method: "GET", NumInstances: 1}
 	hc := NewHttpClient(conf)
 	// call with an event
-	out := hc.call(streams.NewEventFrom([]byte("in")))
+	out := hc.call(streams.NewEventFrom(context.Background(), []byte("in")))
 	// expect an error event (contains {"error": ...})
 	if out.GetStatus() == 200 {
 		t.Fatalf("expected non-200 status on network error")

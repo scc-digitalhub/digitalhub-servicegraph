@@ -5,6 +5,7 @@
 package websocket_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestNewConfigurationNonDefaults(t *testing.T) {
 }
 
 func TestNewSocketEvent(t *testing.T) {
-	event, err := wspkg.NewSocketEvent([]byte("test"), websocket.TextMessage)
+	event, err := wspkg.NewSocketEvent(context.Background(), []byte("test"), websocket.TextMessage)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -71,7 +72,7 @@ func TestNewSocketEvent(t *testing.T) {
 }
 
 func TestSocketEventBinary(t *testing.T) {
-	event, _ := wspkg.NewSocketEvent([]byte("test"), websocket.BinaryMessage)
+	event, _ := wspkg.NewSocketEvent(context.Background(), []byte("test"), websocket.BinaryMessage)
 	if event.GetContentType() != "application/octet-stream" {
 		t.Fatalf("expected 'application/octet-stream', got %s", event.GetContentType())
 	}

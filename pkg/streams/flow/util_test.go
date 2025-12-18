@@ -5,6 +5,7 @@
 package flow_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
@@ -31,7 +32,7 @@ func TestConcatTemplate(t *testing.T) {
 	}
 
 	// Test with streams.Event
-	event, _ := streams.NewGenericEvent([]byte(`{"job": "developer"}`), "", "", nil, nil, 200)
+	event, _ := streams.NewGenericEvent(context.TODO(), []byte(`{"job": "developer"}`), "", "", nil, nil, 200)
 	valuesWithEvent := []any{
 		`{"name": "Jane"}`,
 		event,

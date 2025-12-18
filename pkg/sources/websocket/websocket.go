@@ -5,6 +5,7 @@
 package websocket
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -47,7 +48,7 @@ func NewWSSource(conf *Configuration) *WSSource {
 	return source
 }
 
-func (s *WSSource) init(factory sources.FlowFactory) {
+func (s *WSSource) init(factory sources.FlowFactory) error {
 	s.factory = factory
 	serverPort := fmt.Sprintf(":%d", s.Conf.Port)
 
@@ -60,16 +61,16 @@ func (s *WSSource) init(factory sources.FlowFactory) {
 	if err != nil {
 		s.logger.Error("Error starting server:", slog.Any("error", err))
 	}
-
+	return nil
 }
 
-func (s *WSSource) Start(factory sources.FlowFactory) {
-	s.init(factory)
+func (s *WSSource) Start(factory sources.FlowFactory) error {
+	return s.init(factory)
 }
 
-func (s *WSSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) {
+func (s *WSSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) error {
 	s.sink = &sink
-	s.init(factory)
+	return s.init(factory)
 }
 
 func (s *WSSource) wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +121,7 @@ func (s *WSSource) handleConnection(conn *websocket.Conn) {
 			break
 		}
 
-		event, err := NewSocketEvent(message, messageType)
+		event, err := NewSocketEvent(context.Background(), message, messageType)
 		if err != nil {
 			s.cleanConnection(conn, err)
 			break

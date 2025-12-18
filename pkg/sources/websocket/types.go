@@ -5,6 +5,7 @@
 package websocket
 
 import (
+	"context"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -26,10 +27,11 @@ type SocketEvent struct {
 	body        []byte
 	messageType int
 	timestamp   time.Time
+	ctx         context.Context
 }
 
-func NewSocketEvent(body []byte, messageType int) (*SocketEvent, error) {
-	event := &SocketEvent{}
+func NewSocketEvent(ctx context.Context, body []byte, messageType int) (*SocketEvent, error) {
+	event := &SocketEvent{ctx: ctx}
 
 	event.body = body
 	event.messageType = messageType
@@ -53,6 +55,11 @@ func (e *SocketEvent) GetBody() []byte {
 // GetTimestamp returns when the event originated
 func (e *SocketEvent) GetTimestamp() time.Time {
 	return e.timestamp
+}
+
+// GetContext returns the context of the event
+func (e *SocketEvent) GetContext() context.Context {
+	return e.ctx
 }
 func NewConfiguration(port int, capacity int) *Configuration {
 

@@ -5,6 +5,7 @@
 package streams
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -66,6 +67,9 @@ type Event interface {
 
 	// GetStatus returns the status of the event, if applicable
 	GetStatus() int
+
+	// GetContext returns the context of the event
+	GetContext() context.Context
 }
 
 type GenericEvent struct {
@@ -77,12 +81,13 @@ type GenericEvent struct {
 	headers map[string]string
 	fields  map[string]string
 	status  int
+	context context.Context
 }
 
 var _ Event = (*GenericEvent)(nil)
 
-func NewGenericEvent(body []byte, rawUrl string, method string, headers, fields map[string]string, status int) (*GenericEvent, error) {
-	event := &GenericEvent{status: status}
+func NewGenericEvent(ctx context.Context, body []byte, rawUrl string, method string, headers, fields map[string]string, status int) (*GenericEvent, error) {
+	event := &GenericEvent{status: status, context: ctx}
 	event.body = body
 	event.method = method
 	parsed, err := url.Parse(rawUrl)
@@ -191,25 +196,37 @@ func (ae *GenericEvent) GetTopic() string {
 func (ae *GenericEvent) GetStatus() int {
 	return ae.status
 }
+func (ae *GenericEvent) GetContext() context.Context {
+	return ae.context
+}
 
-func NewEventFrom(value interface{}) Event {
+func NewEventFrom(ctx context.Context, value any) Event {
 	switch body := value.(type) {
 	case Event:
 		return body
 	case string:
-		event, _ := NewGenericEvent([]byte(body), "", "", nil, nil, 200)
+		event, _ := NewGenericEvent(ctx, []byte(body), "", "", nil, nil, 200)
 		return event
 	case []byte:
-		event, _ := NewGenericEvent(body, "", "", nil, nil, 200)
+		event, _ := NewGenericEvent(ctx, body, "", "", nil, nil, 200)
 		return event
 	default:
-		event, _ := NewGenericEvent([]byte(fmt.Sprintf("%v", value)), "", "", nil, nil, 200)
+		event, _ := NewGenericEvent(ctx, []byte(fmt.Sprintf("%v", value)), "", "", nil, nil, 200)
 		return event
 
 	}
 }
 
-func NewErrorEvent(err error, status int) Event {
-	event, _ := NewGenericEvent([]byte(fmt.Sprintf("{\"error\": \"%s\"}", err)), "", "", nil, nil, status)
+func ExtractContext(value any) context.Context {
+	switch body := value.(type) {
+	case Event:
+		return body.GetContext()
+	default:
+		return context.Background()
+	}
+}
+
+func NewErrorEvent(ctx context.Context, err error, status int) Event {
+	event, _ := NewGenericEvent(ctx, []byte(fmt.Sprintf("{\"error\": \"%s\"}", err)), "", "", nil, nil, status)
 	return event
 }
