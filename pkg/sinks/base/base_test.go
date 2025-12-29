@@ -184,3 +184,117 @@ func TestStdOutConverter_Convert(t *testing.T) {
 		t.Fatalf("expected StdoutSink, got %T", sink)
 	}
 }
+
+func TestFileProcessor_Validate(t *testing.T) {
+	converter := &FileProcessor{}
+
+	// Valid spec
+	spec := model.OutputSpec{
+		Spec: map[string]interface{}{
+			"file_name": "test.txt",
+		},
+	}
+
+	err := converter.Validate(spec)
+	if err != nil {
+		t.Fatalf("expected no error for valid spec, got %v", err)
+	}
+
+	// Invalid spec - missing file_name
+	spec.Spec = map[string]interface{}{}
+	err = converter.Validate(spec)
+	if err == nil {
+		t.Fatalf("expected error for missing file_name")
+	}
+
+	// Invalid spec - empty file_name
+	spec.Spec = map[string]interface{}{
+		"file_name": "",
+	}
+	err = converter.Validate(spec)
+	if err == nil {
+		t.Fatalf("expected error for empty file_name")
+	}
+}
+
+func TestIgnoreConverter_Validate(t *testing.T) {
+	converter := &IgnoreConverter{}
+
+	spec := model.OutputSpec{
+		Spec: map[string]interface{}{},
+	}
+
+	err := converter.Validate(spec)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestStdOutConverter_Validate(t *testing.T) {
+	converter := &StdOutConverter{}
+
+	spec := model.OutputSpec{
+		Spec: map[string]interface{}{},
+	}
+
+	err := converter.Validate(spec)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestFileProcessor_Convert_Error(t *testing.T) {
+	converter := &FileProcessor{}
+
+	// Invalid spec that can't be converted
+	spec := model.OutputSpec{
+		Spec: map[string]interface{}{
+			"file_name": make(chan int), // channels can't be marshaled
+		},
+	}
+
+	_, err := converter.Convert(spec)
+	if err == nil {
+		t.Fatalf("expected error for invalid spec")
+	}
+}
+
+func TestDrainChan(t *testing.T) {
+	ch := make(chan any, 3)
+	ch <- "test1"
+	ch <- "test2"
+	ch <- "test3"
+	close(ch)
+
+	// drainChan should consume all elements
+	drainChan(ch)
+
+	// Channel should be empty and closed
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatalf("channel should be closed")
+		}
+	default:
+		t.Fatalf("channel should be closed")
+	}
+}
+
+func TestDrainChan_Nil(t *testing.T) {
+	// Should not panic with nil channel
+	drainChan(nil)
+}
+
+func TestFileSink_WriteError(t *testing.T) {
+	// Create a file sink with a directory that doesn't exist and can't be created
+	// This will test the error handling in the process method
+	tmp := "/nonexistent/directory/test.txt"
+	fs := NewFileSink(tmp)
+
+	// Send data that should trigger file creation error
+	fs.In() <- "test data"
+	close(fs.In())
+
+	// Wait for completion - should handle error gracefully
+	fs.AwaitCompletion()
+}

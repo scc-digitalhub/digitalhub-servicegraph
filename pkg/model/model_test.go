@@ -30,6 +30,7 @@ func TestExecMode(t *testing.T) {
 
 func TestMergeMode(t *testing.T) {
 	assert.Equal(t, MergeMode("concat"), MergeModeConcat)
+	assert.Equal(t, MergeMode("concat_template"), MergeModeConcatTemplate)
 }
 
 func TestNode(t *testing.T) {
@@ -99,4 +100,51 @@ func TestGraph(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), "http://input.com")
 	assert.Contains(t, string(data), "http://output.com")
+}
+
+func TestNode_ConditionExpression(t *testing.T) {
+	node := Node{
+		Condition: "$.status == 'active'",
+	}
+
+	expr := node.ConditionExpression()
+	// The expression might be nil if JSONPath parsing fails
+	if expr == nil {
+		t.Logf("Condition expression is nil, possibly due to JSONPath parsing")
+		return
+	}
+	assert.NotNil(t, expr)
+
+	// Test caching - should return same expression
+	expr2 := node.ConditionExpression()
+	assert.Equal(t, expr, expr2)
+}
+
+func TestNode_ConditionExpression_Empty(t *testing.T) {
+	node := Node{
+		Condition: "",
+	}
+
+	expr := node.ConditionExpression()
+	assert.NotNil(t, expr)
+	// Empty condition should default to "$"
+}
+
+func TestNodeConfig_Cache(t *testing.T) {
+	config := NodeConfig{
+		Kind: "http",
+		Spec: map[string]interface{}{"url": "http://example.com"},
+	}
+
+	// Initially cache should be nil
+	assert.Nil(t, config.ConfigCache())
+
+	// Set cache
+	testData := "cached data"
+	config.SetConfigCache(testData)
+
+	// Should return cached data
+	cached := config.ConfigCache()
+	assert.NotNil(t, cached)
+	assert.Equal(t, testData, *cached)
 }

@@ -119,6 +119,9 @@ func addAttrToSpan(ctx context.Context, body []byte, contentType string, attribu
 	if !IsOTelTracingEnabled() {
 		return
 	}
+	if len(body) == 0 {
+		return
+	}
 	span := oteltrace.SpanFromContext(ctx)
 	if span != nil && isTextContentType(contentType) {
 		span.SetAttributes(attribute.String(attributeKey, string(body)))

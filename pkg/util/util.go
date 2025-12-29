@@ -86,9 +86,9 @@ func EvaluateJSONPathOnExpr(jsonData any, x jp.Expr) ([]any, error) {
 	return res, nil
 }
 
-func ConvertBody(in any, t *template.Template) (any, error) {
+func ConvertBody(in any, t *template.Template) ([]byte, error) {
 	if t == nil {
-		return in, nil
+		return in.([]byte), nil
 	}
 	var body []byte
 	switch bodyType := in.(type) {

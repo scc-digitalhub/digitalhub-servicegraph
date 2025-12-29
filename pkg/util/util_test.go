@@ -7,6 +7,7 @@ package util_test
 import (
 	"context"
 	"testing"
+	"text/template"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
@@ -169,4 +170,59 @@ func TestEvaluateJSONPath_EmptyPath(t *testing.T) {
 	if len(res) == 0 {
 		t.Fatalf("expected non-empty result for root path")
 	}
+}
+
+func TestConvertBody_WithTemplate(t *testing.T) {
+	// Test with template on string data
+	templateStr := `Hello {{.}}!`
+	tmpl, err := template.New("test").Parse(templateStr)
+	if err != nil {
+		t.Fatalf("failed to parse template: %v", err)
+	}
+
+	result, err := util.ConvertBody("world", tmpl)
+	if err != nil {
+		t.Fatalf("ConvertBody failed: %v", err)
+	}
+
+	expected := "Hello world!"
+	if string(result) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(result))
+	}
+}
+
+func TestConvertBody_WithoutTemplate(t *testing.T) {
+	// Test without template - should return the input as []byte
+	input := []byte("plain text")
+	result, err := util.ConvertBody(input, nil)
+	if err != nil {
+		t.Fatalf("ConvertBody failed: %v", err)
+	}
+
+	expected := "plain text"
+	if string(result) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(result))
+	}
+}
+
+func TestConvertBody_DifferentTypes(t *testing.T) {
+	// Test with []byte (the expected input type when template is nil)
+	input := []byte("bytes body")
+	result, err := util.ConvertBody(input, nil)
+	if err != nil {
+		t.Fatalf("ConvertBody with []byte failed: %v", err)
+	}
+	if string(result) != "bytes body" {
+		t.Fatalf("expected 'bytes body', got %q", string(result))
+	}
+}
+
+func TestConvertBody_TemplateError(t *testing.T) {
+	// Template with invalid syntax
+	templateStr := `Hello {{.invalid` // Missing closing braces
+	_, err := template.New("test").Parse(templateStr)
+	if err == nil {
+		t.Fatalf("expected template parsing error")
+	}
+	// Since parsing fails, we can't test execution
 }

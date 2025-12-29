@@ -162,3 +162,61 @@ func TestNewConfiguration_NilMaps(t *testing.T) {
 		t.Errorf("expected MsgType %d, got %d", ws.BinaryMessage, conf.MsgType)
 	}
 }
+
+func TestWebSocketProcessor_Validate(t *testing.T) {
+	converter := &WebSocketProcessor{}
+
+	// Valid spec
+	spec := model.OutputSpec{
+		Spec: map[string]interface{}{
+			"url": "ws://example.com",
+		},
+	}
+
+	err := converter.Validate(spec)
+	if err != nil {
+		t.Fatalf("expected no error for valid spec, got %v", err)
+	}
+
+	// Invalid spec - missing URL
+	spec.Spec = map[string]interface{}{}
+	err = converter.Validate(spec)
+	if err == nil {
+		t.Fatalf("expected error for missing URL")
+	}
+
+	// Invalid spec - empty URL
+	spec.Spec = map[string]interface{}{
+		"url": "",
+	}
+	err = converter.Validate(spec)
+	if err == nil {
+		t.Fatalf("expected error for empty URL")
+	}
+}
+
+func TestWebSocketProcessor_Convert_Error(t *testing.T) {
+	converter := &WebSocketProcessor{}
+
+	// Invalid spec that can't be converted
+	spec := model.OutputSpec{
+		Spec: map[string]interface{}{
+			"url": make(chan int), // channels can't be marshaled
+		},
+	}
+
+	_, err := converter.Convert(spec)
+	if err == nil {
+		t.Fatalf("expected error for invalid spec")
+	}
+}
+
+func TestNewWebSocketSink_ConnectionError(t *testing.T) {
+	// Try to connect to a non-existent server
+	conf := NewConfiguration("ws://nonexistent-server-12345.com", nil, nil, ws.TextMessage)
+
+	_, err := NewWebSocketSink(*conf)
+	if err == nil {
+		t.Fatalf("expected connection error for non-existent server")
+	}
+}
