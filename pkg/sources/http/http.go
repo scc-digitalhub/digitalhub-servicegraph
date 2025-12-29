@@ -185,12 +185,12 @@ func (s *HTTPSource) writeMessage(ctx context.Context, w http.ResponseWriter, ms
 	default:
 		s.logger.Warn("Received unsupported message type", slog.Any("type", v))
 	}
-	w.Header().Set("Content-Type", contentType)
-	w.WriteHeader(http.StatusOK)
-	w.Write(body)
 
 	util.AddResponseToSpan(ctx, body, contentType)
 
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
+	w.Write(body)
 }
 
 func (s *HTTPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) error {

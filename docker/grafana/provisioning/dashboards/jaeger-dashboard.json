@@ -1,0 +1,64 @@
+{
+    "id": null,
+    "title": "Jaeger Tracing Dashboard",
+    "tags": ["jaeger", "tracing"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Traces per Second",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(traces_span_metrics_calls_total[5m])",
+            "legendFormat": "Traces/sec",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Span Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(traces_span_metrics_duration_milliseconds_bucket[5m]))",
+            "legendFormat": "95th percentile",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(traces_span_metrics_duration_milliseconds_bucket[5m]))",
+            "legendFormat": "50th percentile",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 8
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": []
+    },
+    "refresh": "5s",
+    "schemaVersion": 27,
+    "version": 0,
+    "links": []
+}

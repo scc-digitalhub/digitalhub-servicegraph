@@ -141,6 +141,8 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 			httpReq.Header.Set(header, value)
 		}
 	}
+	util.AddRequestToSpan(msg.GetContext(), req.GetBody(), req.GetContentType())
+
 	// make http call
 	resp, err := hc.httpClient.Do(httpReq)
 	if err != nil && resp != nil {
@@ -160,7 +162,24 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 	if err != nil {
 		return streams.NewErrorEvent(msg.GetContext(), err, 500)
 	}
-	return streams.NewEventFrom(msg.GetContext(), body)
+
+	headers := make(map[string]string)
+	for key, values := range resp.Header {
+		headers[key] = strings.Join(values, ", ")
+	}
+
+	result, err := streams.NewGenericEventBuilder(msg.GetContext()).
+		WithBody(body.([]byte)).
+		WithURL(req.GetURL()).
+		WithMethod(req.GetMethod()).
+		WithHeaders(headers).
+		WithStatus(resp.StatusCode).
+		Build()
+	if err != nil {
+		return streams.NewErrorEvent(msg.GetContext(), err, 500)
+	}
+
+	return result
 }
 
 func createClient() *http.Client {

@@ -239,3 +239,68 @@ func TestGenericEvent_NilHeadersFields(t *testing.T) {
 		t.Fatalf("expected nil fields map")
 	}
 }
+
+func TestGenericEventBuilder(t *testing.T) {
+	ctx := context.Background()
+
+	// Test basic builder usage
+	event, err := NewGenericEventBuilder(ctx).
+		WithBody([]byte("test body")).
+		WithURL("http://example.com/test").
+		WithMethod("POST").
+		AddHeader("content-type", "application/json").
+		AddHeader("x-custom", "value").
+		AddField("field1", "value1").
+		WithStatus(201).
+		Build()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if string(event.GetBody()) != "test body" {
+		t.Fatalf("body mismatch: %s", string(event.GetBody()))
+	}
+
+	if event.GetURL() != "http://example.com/test" {
+		t.Fatalf("url mismatch: %s", event.GetURL())
+	}
+
+	if event.GetMethod() != "POST" {
+		t.Fatalf("method mismatch: %s", event.GetMethod())
+	}
+
+	if event.GetContentType() != "application/json" {
+		t.Fatalf("content-type mismatch: %s", event.GetContentType())
+	}
+
+	if event.GetHeader("x-custom") != "value" {
+		t.Fatalf("header mismatch: %s", event.GetHeader("x-custom"))
+	}
+
+	if event.GetField("field1") != "value1" {
+		t.Fatalf("field mismatch: %s", event.GetField("field1"))
+	}
+
+	if event.GetStatus() != 201 {
+		t.Fatalf("status mismatch: %d", event.GetStatus())
+	}
+
+	// Test default values
+	event2, err := NewGenericEventBuilder(ctx).Build()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if event2.GetStatus() != 200 {
+		t.Fatalf("default status should be 200, got %d", event2.GetStatus())
+	}
+
+	if len(event2.GetHeaders()) != 0 {
+		t.Fatalf("expected empty headers map")
+	}
+
+	if len(event2.GetFields()) != 0 {
+		t.Fatalf("expected empty fields map")
+	}
+}

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+//
+// SPDX-License-Identifier: Apache-2.0
+
 package util
 
 import (
@@ -145,7 +149,18 @@ func newTracerProvider(r *resource.Resource, exp trace.SpanExporter) *trace.Trac
 	)
 }
 
+// newMetricExporter creates a metric reader based on the value of the OTEL_METRICS_EXPORTER env vars.
 func newMetricExporter(ctx context.Context) (metric.Reader, error) {
+	// enc := json.NewEncoder(os.Stdout)
+	// enc.SetIndent("", "  ")
+	// exp, err := stdoutmetric.New(
+	// 	stdoutmetric.WithEncoder(enc),
+	// 	stdoutmetric.WithoutTimestamps(),
+	// )
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// return metric.NewPeriodicReader(exp), nil
 	return autoexport.NewMetricReader(ctx)
 }
 

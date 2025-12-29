@@ -127,6 +127,9 @@ func (ae *GenericEvent) GetContentType() string {
 		if v, ok := ae.headers["content-type"]; ok {
 			return v
 		}
+		if v, ok := ae.headers["Content-Type"]; ok {
+			return v
+		}
 	}
 	return ""
 }
@@ -198,6 +201,88 @@ func (ae *GenericEvent) GetStatus() int {
 }
 func (ae *GenericEvent) GetContext() context.Context {
 	return ae.context
+}
+
+// GenericEventBuilder provides a builder pattern for creating GenericEvent instances incrementally
+type GenericEventBuilder struct {
+	ctx     context.Context
+	body    []byte
+	rawUrl  string
+	method  string
+	headers map[string]string
+	fields  map[string]string
+	status  int
+}
+
+// NewGenericEventBuilder creates a new builder for GenericEvent with the required context
+func NewGenericEventBuilder(ctx context.Context) *GenericEventBuilder {
+	return &GenericEventBuilder{
+		ctx:     ctx,
+		headers: make(map[string]string),
+		fields:  make(map[string]string),
+		status:  200, // default status
+	}
+}
+
+// WithBody sets the body of the event
+func (b *GenericEventBuilder) WithBody(body []byte) *GenericEventBuilder {
+	b.body = body
+	return b
+}
+
+// WithURL sets the URL of the event
+func (b *GenericEventBuilder) WithURL(rawUrl string) *GenericEventBuilder {
+	b.rawUrl = rawUrl
+	return b
+}
+
+// WithMethod sets the HTTP method of the event
+func (b *GenericEventBuilder) WithMethod(method string) *GenericEventBuilder {
+	b.method = method
+	return b
+}
+
+// WithHeaders sets the headers map of the event
+func (b *GenericEventBuilder) WithHeaders(headers map[string]string) *GenericEventBuilder {
+	if headers != nil {
+		b.headers = headers
+	} else {
+		b.headers = make(map[string]string)
+	}
+	return b
+}
+
+// AddHeader adds a single header to the event
+func (b *GenericEventBuilder) AddHeader(key, value string) *GenericEventBuilder {
+	b.headers[key] = value
+	return b
+}
+
+// WithFields sets the fields map of the event
+func (b *GenericEventBuilder) WithFields(fields map[string]string) *GenericEventBuilder {
+	if fields != nil {
+		b.fields = fields
+	} else {
+		b.fields = make(map[string]string)
+	}
+	return b
+}
+
+// AddField adds a single field to the event
+func (b *GenericEventBuilder) AddField(key, value string) *GenericEventBuilder {
+	b.fields[key] = value
+	return b
+}
+
+// WithStatus sets the status code of the event
+func (b *GenericEventBuilder) WithStatus(status int) *GenericEventBuilder {
+	b.status = status
+	return b
+}
+
+// Build creates the GenericEvent instance
+func (b *GenericEventBuilder) Build() (*GenericEvent, error) {
+	return NewGenericEvent(b.ctx, b.body, b.rawUrl, b.method, b.headers, b.fields, b.status)
 }
 
 func NewEventFrom(ctx context.Context, value any) Event {
