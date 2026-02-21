@@ -1,0 +1,16 @@
+# Requirements for VQA service
+# Python 3.8+ required
+
+# Core ML dependencies
+torch>=2.0.0
+transformers>=4.30.0
+pillow>=10.0.0
+
+# HTTP service (simple version)
+flask>=2.3.0
+
+# PyTriton serving (optional - for vqa_service.py)
+nvidia-pytriton>=0.5.0
+
+# Additional utilities
+numpy>=1.24.0

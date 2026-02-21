@@ -16,6 +16,7 @@ import (
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/base"
 
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/http"
+	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/mjpeg"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/websocket"
 )
 

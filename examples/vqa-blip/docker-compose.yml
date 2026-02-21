@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+# SPDX-License-Identifier: Apache-2.0
+
+services:
+  vqa-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vqa-blip-service
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Uncomment for GPU support (requires nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Example: Service graph runner (requires building the Go binary)
+  # Uncomment to run the full pipeline
+  # servicegraph:
+  #   image: golang:1.21
+  #   container_name: vqa-servicegraph
+  #   volumes:
+  #     - ../../:/workspace
+  #   working_dir: /workspace
+  #   command: >
+  #     sh -c "
+  #       go build -o digitalhub-servicegraph main.go &&
+  #       ./digitalhub-servicegraph examples/vqa-blip/vqa-pipeline.yaml
+  #     "
+  #   depends_on:
+  #     vqa-service:
+  #       condition: service_healthy
+  #   network_mode: "host"

@@ -195,6 +195,252 @@ Sends WebSocket messages.
 - `input_template` (string): Optional Go text template for input data
 - `output_template` (string): Optional Go text template for output data
 
+## Template Processing
+
+Service Graph supports Go text templates with custom functions for data transformation in `input_template` and `output_template` fields. Templates allow you to transform data flowing through the pipeline using standard Go template syntax enhanced with specialized functions.
+
+### Template Syntax
+
+Templates use the standard [Go text/template](https://pkg.go.dev/text/template) syntax:
+
+```
+{{.}}              # Access the input data
+{{. | jp "$.name"}}  # Use custom functions with pipes
+```
+
+### Custom Template Functions
+
+#### jp - JSONPath Evaluation
+
+Evaluates a JSONPath expression on JSON data.
+
+**Signature:** `jp(jsonPath string, jsonData any) any`
+
+**Parameters:**
+- `jsonPath` (string): JSONPath expression 
+- `jsonData` (any): JSON data (string, []byte, or streams.Event)
+
+**Returns:** The matched value(s) from the JSON data
+
+**Examples:**
+```yaml
+# Extract a single field
+output_template: "Name: {{. | jp \"$.user.name\"}}"
+
+# Extract nested data
+output_template: "Age: {{. | jp \"$.user.profile.age\"}}"
+
+# Extract array element
+output_template: "First: {{. | jp \"$.items[0]\"}}"
+
+# Complex expression
+output_template: "{{. | jp \"$.users[?(@.active==true)].name\"}}"
+```
+
+**Input:**
+```json
+{"user": {"name": "Alice", "profile": {"age": 30}}}
+```
+
+**Output:**
+```
+Name: Alice
+Age: 30
+```
+
+#### json - JSON Serialization
+
+Converts a Go value to its JSON string representation.
+
+**Signature:** `json(v any) string`
+
+**Parameters:**
+- `v` (any): Any Go value
+
+**Returns:** JSON string representation
+
+**Examples:**
+```yaml
+# Convert extracted data to JSON
+output_template: "{{. | jp \"$.user\" | json}}"
+
+# Create JSON structure
+output_template: "{\"result\": {{. | json}}}"
+```
+
+**Input:**
+```json
+{"user": {"name": "Bob", "age": 25}}
+```
+
+**Output:**
+```json
+{"name":"Bob","age":25}
+```
+
+#### tensor - Binary Data to Numerical Array
+
+Converts byte arrays to numerical arrays based on Inference Protocol v2 data types. Useful for ML model inference and binary data processing.
+
+**Signature:** `tensor(dataType string, data any) string`
+
+**Parameters:**
+- `dataType` (string): Data type name (case-insensitive)
+- `data` (any): Binary data ([]byte, string, or streams.Event)
+
+**Returns:** JSON array of numerical values
+
+**Supported Data Types:**
+
+| Type | Description | Bytes per Element | Output Type |
+|------|-------------|-------------------|-------------|
+| BOOL | Boolean values | 1 | []bool |
+| UINT8 | Unsigned 8-bit integers | 1 | []int |
+| INT8 | Signed 8-bit integers | 1 | []int |
+| UINT16 | Unsigned 16-bit integers | 2 | []uint16 |
+| INT16 | Signed 16-bit integers | 2 | []int16 |
+| UINT32 | Unsigned 32-bit integers | 4 | []uint32 |
+| INT32 | Signed 32-bit integers | 4 | []int32 |
+| UINT64 | Unsigned 64-bit integers | 8 | []uint64 |
+| INT64 | Signed 64-bit integers | 8 | []int64 |
+| FP16 | Half-precision floats | 2 | []float32 |
+| FP32 | Single-precision floats | 4 | []float32 |
+| FP64 | Double-precision floats | 8 | []float64 |
+| BYTES | Raw byte array | 1 | []int |
+
+**Examples:**
+```yaml
+# Convert binary float data to JSON array
+output_template: "{{. | tensor \"FP32\"}}"
+
+# Convert with JSONPath extraction
+output_template: "{{. | jp \"$.data\" | tensor \"INT32\"}}"
+
+# Use in JSON structure
+output_template: "{\"values\": {{. | tensor \"UINT8\"}}}"
+```
+
+**Input (binary):** 4 bytes representing float32 values [1.0, 2.0]
+
+**Output:**
+```json
+[1.0, 2.0]
+```
+
+**Notes:**
+- All multi-byte types use little-endian byte order
+- FP16 values are converted to FP32 for JSON representation
+- Data length must be a multiple of the element size
+- BYTES and UINT8 produce the same output
+
+### Combining Functions
+
+Functions can be chained using pipes for complex transformations:
+
+```yaml
+# Extract JSON, convert to specific format, serialize back
+output_template: |
+  {
+    "user": {{. | jp "$.user" | json}},
+    "tensor_data": {{. | jp "$.binary_data" | tensor "FP32" | json}}
+  }
+
+# Multiple stages of processing
+input_template: "{{. | jp \"$.input\" | json}}"
+output_template: "Result: {{. | jp \"$.output.value\"}}"
+```
+
+### Template Usage in Services
+
+Templates can be applied to both input and output data in service nodes:
+
+#### Input Template Example
+
+Transform request data before sending to a service:
+
+```yaml
+flow:
+  type: "service"
+  name: "api-call"
+  config:
+    kind: "http"
+    spec:
+      url: "https://api.example.com/process"
+      method: "POST"
+      input_template: |
+        {
+          "user_id": {{. | jp "$.user.id"}},
+          "data": {{. | jp "$.payload" | json}}
+        }
+```
+
+#### Output Template Example
+
+Transform response data from a service:
+
+```yaml
+flow:
+  type: "service"
+  name: "api-call"
+  config:
+    kind: "http"
+    spec:
+      url: "https://api.example.com/model/predict"
+      method: "POST"
+      output_template: |
+        {
+          "predictions": {{. | jp "$.outputs[0].data" | tensor "FP32"}},
+          "model_name": "{{. | jp "$.model_name\"}}"
+        }
+```
+
+#### Complete Example
+
+```yaml
+input:
+  kind: "http"
+  spec:
+    port: 8080
+
+flow:
+  type: "sequence"
+  nodes:
+    - type: "service"
+      name: "ml-inference"
+      config:
+        kind: "http"
+        spec:
+          url: "http://triton-server:8000/v2/models/mymodel/infer"
+          method: "POST"
+          headers:
+            Content-Type: "application/json"
+          input_template: |
+            {
+              "inputs": [{
+                "name": "input_tensor",
+                "shape": [1, {{. | jp "$.shape[0]"}}, {{. | jp "$.shape[1]"}}],
+                "datatype": "FP32",
+                "data": {{. | jp "$.image_data" | tensor "FP32"}}
+              }]
+            }
+          output_template: |
+            {
+              "predictions": {{. | jp "$.outputs[0].data" | tensor "FP32"}},
+              "shape": {{. | jp "$.outputs[0].shape" | json}}
+            }
+
+output:
+  kind: "stdout"
+```
+
+### Template Error Handling
+
+If a template function fails (e.g., invalid JSONPath, type mismatch), the pipeline will return an error and the request will fail. Ensure:
+
+- JSONPath expressions are valid
+- Data types match expected formats
+- Binary data lengths are correct multiples for tensor operations
+
 ## Configuration YAML Structure
 
 The configuration is defined in YAML format with the following structure:
@@ -253,6 +499,36 @@ curl -X POST http://localhost:8080/ -d "Hello, Service Graph!"
 ```
 
 The request will be processed through the flow and the response will be printed to stdout.
+
+
+## Examples
+
+The `examples/` directory contains complete, ready-to-run applications demonstrating various use cases:
+
+### Visual Question Answering (VQA) Pipeline
+
+**Location:** `examples/vqa-blip/`
+
+A complete ML pipeline that processes video streams and generates image captions using the BLIP vision-language model.
+
+**Features:**
+- MJPEG video stream processing
+- BLIP model inference service (Flask/PyTriton)
+- Real-time image captioning
+- Docker support for easy deployment
+
+**Quick Start:**
+```bash
+cd examples/vqa-blip
+./setup.sh          # Set up Python environment
+./start_service.sh  # Start VQA service
+
+# In another terminal:
+go build -o digitalhub-servicegraph main.go
+./digitalhub-servicegraph examples/vqa-blip/vqa-pipeline.yaml
+```
+
+See the [VQA Example README](examples/vqa-blip/README.md) for detailed documentation.
 
 
 ## Security Policy

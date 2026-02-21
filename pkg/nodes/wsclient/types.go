@@ -7,6 +7,8 @@ package wsclient
 import (
 	"maps"
 	"text/template"
+
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
 
 type Configuration struct {
@@ -40,13 +42,13 @@ func NewConfiguration(url string, params, headers map[string]string, msgType int
 func (conf *Configuration) setInputTemplate(templateStr string) {
 	conf.InputTemplate = templateStr
 	if templateStr != "" {
-		conf.inTemplateObj, _ = template.New("inputTemplate").Parse(templateStr)
+		conf.inTemplateObj, _ = util.BuildTemplate(templateStr, "inputTemplate")
 	}
 }
 
 func (conf *Configuration) setOutputTemplate(templateStr string) {
 	conf.OutputTemplate = templateStr
 	if templateStr != "" {
-		conf.outTemplateObj, _ = template.New("outputTemplate").Parse(templateStr)
+		conf.outTemplateObj, _ = util.BuildTemplate(templateStr, "outputTemplate")
 	}
 }

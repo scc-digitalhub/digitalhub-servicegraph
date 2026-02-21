@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Example configuration for MJPEG source
+# This demonstrates how to connect to an MJPEG stream and process frames
+input:
+  kind: "mjpeg"
+  spec:
+    url: "http://localhost:1984/api/stream.mjpeg?src=audio"  # MJPEG stream URL
+    frame_interval: 5                        # Process every 5th frame (reduces load)
+    read_timeout: 10                         # Read timeout in seconds
+output:
+  kind: "stdout"
+  spec: {}
+flow:
+  type: "sequence"
+  name: "mjpeg-processing"
+  nodes:
+    - type: "service"
+      name: "example-service"
+      config:
+        kind: "http"
+        spec:
+          url: "https://httpbin.org/post"
+          method: "POST"
+          headers:
+            Content-Type: "image/jpeg"

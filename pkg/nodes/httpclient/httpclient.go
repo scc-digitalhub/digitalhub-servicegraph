@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"text/template"
 	"time"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
@@ -257,13 +256,13 @@ func (c *HTTPProcessor) Validate(spec model.NodeConfig) error {
 		return err
 	}
 	if conf.InputTemplate != "" {
-		_, err := template.New("inputTemplate").Parse(conf.InputTemplate)
+		_, err := util.BuildTemplate(conf.InputTemplate, "inputTemplate")
 		if err != nil {
 			return errors.New("httpclient node has invalid input_template: " + err.Error())
 		}
 	}
 	if conf.OutputTemplate != "" {
-		_, err := template.New("outputTemplate").Parse(conf.OutputTemplate)
+		_, err := util.BuildTemplate(conf.OutputTemplate, "outputTemplate")
 		if err != nil {
 			return errors.New("httpclient node has invalid output_template: " + err.Error())
 		}
