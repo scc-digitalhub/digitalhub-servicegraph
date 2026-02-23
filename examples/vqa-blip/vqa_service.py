@@ -80,7 +80,7 @@ def init_model():
 
 
 @batch
-def infer_fn(images: np.ndarray) -> List[np.ndarray]:
+def infer_fn(image: np.ndarray) -> List[np.ndarray]:
     """
     Inference function for the VQA model.
     
@@ -97,7 +97,7 @@ def infer_fn(images: np.ndarray) -> List[np.ndarray]:
     
     results = []
     
-    for image_bytes in images:
+    for image_bytes in image:
         try:
             # Convert bytes to PIL Image
             image_bytes_clean = image_bytes.tobytes()
@@ -113,7 +113,7 @@ def infer_fn(images: np.ndarray) -> List[np.ndarray]:
             results.append(f"Error: {str(e)}")
     
     # Convert results to numpy array with object dtype for variable-length strings
-    return [np.array(results, dtype=object)]
+    return [np.array(results, dtype=np.dtype(str))]
 
 
 def main():

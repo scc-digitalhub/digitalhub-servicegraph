@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # Video Anonymization Service
+  anonymization-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anonymization-service
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount output directory to persist anonymized frames
+      - ./output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: MJPEG stream server (for testing)
+  # Uncomment if you want to test with a webcam stream
+  # mjpeg-server:
+  #   image: ccrisan/motioneye:master-amd64
+  #   container_name: mjpeg-server
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - ./motioneye-data:/etc/motioneye
+  #   restart: unless-stopped
+
+networks:
+  default:
+    name: anonymization-network

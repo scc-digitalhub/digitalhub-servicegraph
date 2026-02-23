@@ -1,0 +1,49 @@
+# Video Anonymization Pipeline Configuration
+#
+# This pipeline processes MJPEG video streams and anonymizes faces in real-time.
+#
+# Pipeline flow:
+#   MJPEG Source -> HTTP Client -> Anonymization Service -> Stdout
+#
+# The MJPEG source captures frames from a video stream (e.g., webcam or IP camera),
+# the HTTP client sends each frame to the anonymization service, which detects and
+# blurs/pixelates faces, and the result is output to stdout.
+
+input:
+  kind: "mjpeg"
+  spec:
+    # URL of the MJPEG stream (e.g., IP camera or local webcam stream)
+    # Example sources:
+    # - IP camera: "http://camera-ip:8080/video"
+    # - Local Motion: "http://localhost:8081/"
+    # - Test stream: "http://localhost:8080/?action=stream"
+    url: "http://localhost:1984/api/stream.mjpeg?src=camera"
+    
+    # Process every Nth frame to reduce processing load
+    # Higher values = lower processing rate but less resource usage
+    frame_interval: 5
+    
+    # Timeout in seconds
+    read_timeout: 30
+
+output:
+  kind: "stdout"
+  spec: {}
+
+flow:
+  type: "sequence"
+  name: "anonymization-pipeline"
+  nodes:
+    - type: "service"
+      name: "anonymization-service"
+      config:
+        kind: "http"
+        spec:
+          # Anonymization service endpoint
+          url: "http://localhost:8000/anonymize?method=blur&blur_factor=50"
+          method: "POST"
+          headers:
+            Content-Type: "image/jpeg"          
+          # Optional: format output to show info
+          # For now, pass through the anonymized image bytes
+          # output_template: "Anonymized frame {{. | json}}"
