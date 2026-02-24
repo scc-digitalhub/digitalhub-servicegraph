@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Visual Question Answering Pipeline Configuration
+# 
+# This pipeline:
+# 1. Reads frames from an MJPEG video stream
+# 2. Sends each frame to a VQA service (BLIP model) for captioning
+# 3. Outputs the generated captions to stdout
+#
+# Prerequisites:
+# - VQA service running on http://localhost:8000
+# - MJPEG stream available (configure URL below)
+
+input:
+  kind: "mjpeg"
+  spec:
+    # MJPEG stream URL - update this to your video source
+    # Example sources:
+    # - IP camera: "http://camera-ip:port/video.mjpeg"
+    # - Local test stream: "http://localhost:1984/api/stream.mjpeg?src=camera"
+    url: "http://localhost:1984/api/stream.mjpeg?src=camera"
+    
+    # Process every Nth frame to reduce load
+    # Higher values = lower processing rate but less resource usage
+    frame_interval: 10
+    
+    # Timeout in seconds
+    read_timeout: 10
+
+output:
+  kind: "stdout"
+  spec: {}
+
+flow:
+  type: "sequence"
+  name: "vqa-pipeline"
+  nodes:
+    - type: "service"
+      name: "blip-vqa-service"
+      # config:
+      #   kind: "http"
+      #   spec:
+      #     # VQA service endpoint
+      #     url: "http://localhost:8000/v2/models/vqa_blip/infer"
+      #     method: "POST"
+      #     headers:
+      #       Content-Type: "application/json"
+      #     input_template: "{  \"inputs\": [ { \"name\": \"image\", \"datatype\": \"UINT8\", \"shape\": [1, 5018], \"data\": {{ . | tensor \"UINT8\" }} } ] }" # {{ . | json }}" 
+      #     output_template: "Caption: {{ . | jp \"$.outputs[0].data\" }}"
+      config:
+        kind: "openinference"
+        spec:
+          # Triton server gRPC endpoint
+          address: "localhost:8001"
+          
+          # Model configuration
+          model_name: "vqa_blip"
+          
+          # Performance tuning
+          num_instances: 4  # Parallel workers
+          timeout: 10       # Request timeout in seconds
+          
+          # Tensor specifications
+          # Define the structure of input/output tensors
+          input_tensor_spec:
+            - name: "image"
+              datatype: "UINT8"
+              shape: [-1, -1]
+          
+          output_tensor_spec:
+            - name: "caption"
+              datatype: "BYTES"
+              shape: [-1, -1]
+          
+          # input_templates:
+          #   - name: "image"
+          #     template: |
+          #       {{ . | tensor "UINT8" }}
+          
+          output_template: |
+            {
+              "caption": {{. | jp "$.outputs[0].data" }},
+            }

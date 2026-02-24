@@ -12,6 +12,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/httpclient"
+	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/openinferenceclient"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/wsclient"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/base"
 

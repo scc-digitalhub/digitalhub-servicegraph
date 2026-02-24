@@ -18,12 +18,21 @@ import (
 )
 
 var funcMap = template.FuncMap{
-	// "jp" function allows evaluating a JSONPath expression on the input JSON data
+	// "jp" function allows evaluating a JSONPath expression on the input  data treated as JSON. It returns the result of the JSONPath query, which can be used in templates to extract specific fields from JSON data.
 	"jp": jpFunc,
 	// "json" function converts a Go value to its JSON string representation
 	"json": jsonFunc,
 	// "tensor" function converts byte data to numerical array based on Inference Protocol v2 data type
 	"tensor": tensorFunc,
+	// "string" function converts byte data to string, or formats other types as string
+	"string": func(v any) string {
+		switch val := v.(type) {
+		case []byte:
+			return string(val)
+		default:
+			return fmt.Sprintf("%v", val)
+		}
+	},
 }
 
 func jpFunc(jsonPath string, jsonData any) (any, error) {
@@ -59,7 +68,7 @@ func tensorFunc(dataType string, v any) (string, error) {
 		return "", fmt.Errorf("tensor: unsupported input type %T, expected []byte, string, or streams.Event", v)
 	}
 
-	result, err := bytesToTensor(dataType, data)
+	result, err := BytesToTensor(dataType, data)
 	if err != nil {
 		return "", err
 	}
@@ -71,8 +80,8 @@ func tensorFunc(dataType string, v any) (string, error) {
 	return string(jsonData), nil
 }
 
-// bytesToTensor converts a byte array to a numerical array based on Inference Protocol v2 data type
-func bytesToTensor(dataType string, data []byte) (any, error) {
+// BytesToTensor converts a byte array to a numerical array based on Inference Protocol v2 data type
+func BytesToTensor(dataType string, data []byte) (any, error) {
 	// Normalize data type to uppercase
 	dataType = strings.ToUpper(dataType)
 
@@ -83,8 +92,10 @@ func bytesToTensor(dataType string, data []byte) (any, error) {
 			result[i] = b != 0
 		}
 		return result, nil
+	case "BYTES":
+		return string(data), nil
 
-	case "UINT8", "BYTES":
+	case "UINT8":
 		// Convert to []int to avoid base64 encoding in JSON
 		result := make([]int, len(data))
 		for i, b := range data {
@@ -310,6 +321,7 @@ func BuildTemplate(templateStr, templateName string) (*template.Template, error)
 	return tmpl, nil
 }
 
+// ConvertBody applies a template to the body of an event treating the body as a string. If t is nil, it returns the original body as []byte.
 func ConvertBody(in any, t *template.Template) ([]byte, error) {
 	if t == nil {
 		return in.([]byte), nil
@@ -333,4 +345,109 @@ func ConvertBody(in any, t *template.Template) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(sb.String()), nil
+}
+
+// convert string representation of
+func ConvertTensorData(data []byte, dataType string) ([]byte, int64, error) {
+	// string representation
+	var value any
+	err := json.Unmarshal(data, &value)
+	if err != nil {
+		return data, 0, err
+	}
+	switch vType := value.(type) {
+	case []any:
+		res := make([]byte, 0)
+		for _, elem := range vType {
+			value := ConvertElement(elem, dataType)
+			res = append(res, value...)
+		}
+		return res, int64(len(vType)), nil
+	case any:
+		value := ConvertElement(vType, dataType)
+		return value, 1, nil
+	}
+	return data, 0, nil
+}
+
+func ConvertElement(elem any, dataType string) []byte {
+	switch dataType {
+	case "BOOL":
+		if b, ok := elem.(bool); ok {
+			if b {
+				return []byte{1}
+			}
+			return []byte{0}
+		}
+	case "BYTES":
+		return elem.([]byte)
+	case "UINT8":
+		if f, ok := elem.(float64); ok {
+			return []byte{byte(f)}
+		}
+	case "INT8":
+		if f, ok := elem.(float64); ok {
+			return []byte{byte(int8(f))}
+		}
+	case "UINT16":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 2)
+			binary.LittleEndian.PutUint16(res, uint16(f))
+			return res
+		}
+	case "INT16":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 2)
+			binary.LittleEndian.PutUint16(res, uint16(int16(f)))
+			return res
+		}
+	case "UINT32":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 4)
+			binary.LittleEndian.PutUint32(res, uint32(f))
+			return res
+		}
+	case "INT32":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 4)
+			binary.LittleEndian.PutUint32(res, uint32(int32(f)))
+			return res
+		}
+	case "UINT64":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 8)
+			binary.LittleEndian.PutUint64(res, uint64(f))
+			return res
+		}
+	case "INT64":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 8)
+			binary.LittleEndian.PutUint64(res, uint64(int64(f)))
+			return res
+		}
+	case "FP16":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 2)
+			binary.LittleEndian.PutUint16(res, float32ToFloat16(float32(f)))
+			return res
+		}
+	case "FP32":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 4)
+			binary.LittleEndian.PutUint32(res, math.Float32bits(float32(f)))
+			return res
+		}
+	case "FP64":
+		if f, ok := elem.(float64); ok {
+			res := make([]byte, 8)
+			binary.LittleEndian.PutUint64(res, math.Float64bits(f))
+			return res
+		}
+	}
+	return nil
+}
+
+func float32ToFloat16(f float32) uint16 {
+	bits := math.Float32bits(f)
+	return uint16(bits >> 16)
 }
