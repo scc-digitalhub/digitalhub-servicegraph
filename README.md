@@ -118,6 +118,35 @@ output:
     file_name: "output.txt"
 ```
 
+The `folder` sink writes each incoming event to a separate file in a specified folder using an incremental filename pattern.
+
+**Configuration**
+
+The folder sink requires two configuration parameters:
+
+- `folder_path`: The path to the folder where files will be created
+- `filename_pattern`: The pattern for generating filenames with placeholders
+
+**Filename Pattern Placeholders**
+
+The following placeholders are supported in the `filename_pattern`:
+
+- `{counter}` or `{index}`: Incremental counter starting from 1
+- `{timestamp}`: Unix timestamp in seconds
+- `{timestamp_ms}`: Unix timestamp in milliseconds  
+- `{timestamp_ns}`: Unix timestamp in nanoseconds
+
+**Usage:**
+
+```yaml
+output:
+  kind: "folder"
+  spec:
+    folder_path: "./output/data"
+    filename_pattern: "data_{index}.json"
+```
+
+
 ### Ignore Sink
 Discards processed data (useful for testing or when no output is needed).
 

@@ -27,8 +27,10 @@ input:
     read_timeout: 30
 
 output:
-  kind: "stdout"
-  spec: {}
+  kind: "folder"
+  spec:
+    folder_path: "./output/anonymized_frames"
+    filename_pattern: "frame_{timestamp_ms}_{counter}.jpg"
 
 flow:
   type: "sequence"
@@ -46,4 +48,4 @@ flow:
             Content-Type: "image/jpeg"          
           # Optional: format output to show info
           # For now, pass through the anonymized image bytes
-          # output_template: "Anonymized frame {{. | json}}"
+          # output_template: "{{. | jp \"$.image\" }}"
