@@ -1,0 +1,111 @@
+.graph-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Toolbar floating above the React Flow canvas */
+.canvas-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: white;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e5e7eb;
+}
+
+.canvas-hint {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* ── Container node (sequence / ensemble / switch) ────────────────────── */
+.cn-wrap {
+  width: 100%;
+  height: 100%;
+  border: 2px dashed #888;
+  border-radius: 10px;
+  box-sizing: border-box;
+  position: relative;
+  background: transparent;
+}
+
+.cn-wrap .cn-label {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cn-wrap .react-flow__handle {
+  background: #888;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.cn-selected {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+
+/* ── Service leaf node ────────────────────────────────────────────────── */
+.sn-wrap {
+  padding: 10px 14px;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 500;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.sn-wrap .react-flow__handle {
+  background: rgba(255, 255, 255, 0.7);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.2);
+}
+
+.sn-selected {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+
+/* ── General node interactions ───────────────────────────────────────── */
+.react-flow__node {
+  cursor: pointer;
+}
+
+.react-flow__node:hover {
+  filter: brightness(1.1);
+  transition: filter 0.15s;
+}
+
+.react-flow__controls {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+.react-flow__minimap {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+

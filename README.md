@@ -529,6 +529,51 @@ curl -X POST http://localhost:8080/ -d "Hello, Service Graph!"
 
 The request will be processed through the flow and the response will be printed to stdout.
 
+## Visual Service Graph Designer
+
+Service Graph includes a web-based visual designer for creating and configuring service graphs with an intuitive drag-and-drop interface.
+
+### Features
+
+- **Visual Graph Editor**: Drag-and-drop interface for designing service graphs
+- **Component Configuration**: Easy-to-use dialogs for configuring sources, sinks, and nodes
+- **YAML Import/Export**: Load existing configurations and export new ones
+- **Real-time Validation**: Instant feedback on configuration errors
+- **Support for All Components**: 
+  - Sources: HTTP, WebSocket, MJPEG
+  - Sinks: Stdout, File, Folder, Ignore, Webhook, WebSocket
+  - Nodes: HTTP, WebSocket, OpenInference
+  - Flow Types: Sequence, Ensemble, Switch
+
+### Getting Started
+
+1. Navigate to the web directory:
+```bash
+cd web
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Start the development server:
+```bash
+npm run dev
+```
+
+4. Open your browser to `http://localhost:3000`
+
+### Usage
+
+- **Create New Graph**: Use the left panel to configure input sources and the right panel for output sinks
+- **Add Nodes**: Click on the graph canvas to add and configure service nodes
+- **Configure Components**: Click on any component to open its configuration dialog
+- **Import YAML**: Click the "Import" button to load an existing configuration file
+- **Export YAML**: Click "Export" to download your graph as a YAML file
+- **View YAML**: Toggle the YAML view to see the generated configuration in real-time
+
+See the [Web Designer README](web/README.md) for detailed documentation.
 
 ## Examples
 
