@@ -26,10 +26,7 @@ test: ## Run all Go tests
 # ─── Single-platform Docker targets ──────────────────────────────────────────
 
 docker-build: ## Build a single-arch Docker image for the current platform
-	docker build \
-		--tag $(IMAGE_NAME):$(IMAGE_TAG) \
-		--tag $(IMAGE_NAME):latest \
-		.
+	podman build --tag $(IMAGE_NAME):$(IMAGE_TAG)  --tag $(IMAGE_NAME):latest  .
 
 docker-push: ## Push the single-arch image to the registry
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)
