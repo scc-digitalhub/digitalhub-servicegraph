@@ -19,6 +19,22 @@
                 "OTEL_PROPAGATORS": "tracecontext,baggage"
             },
             "args": ["test/simple-http-sync-switch.yaml"]
+        },
+        {
+            "name": "VQA-v2",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/main.go",
+            "args": ["examples/vqa-blip/vqa-pipeline-v2.yaml"]
+        },
+        {
+            "name": "Video-anon",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/main.go",
+            "args": ["examples/video-anonymization/anonymization-pipeline.yaml"]
         }
     ]
 }

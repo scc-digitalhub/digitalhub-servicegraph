@@ -1,0 +1,36 @@
+# Build & test artefacts
+output/
+dist/
+
+# Go build cache (not relevant inside Docker context)
+*.test
+*.out
+
+# Editor & OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python virtual environments (examples)
+.venv/
+examples/**/venv/
+examples/**/__pycache__/
+examples/**/*.pyc
+examples/**/output/
+
+# Git
+.git/
+.gitignore
+
+# GitHub Actions / CI
+.github/
+
+# Documentation
+*.md
+LICENSE
+
+# Web development assets (runtime-only; not needed in the binary image)
+web/node_modules/
+web/dist/

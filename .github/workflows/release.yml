@@ -1,0 +1,76 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Build and publish a multi-arch Docker image to ghcr.io on every release.
+name: Release – build & publish image
+
+on:
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}   # scc-digitalhub/digitalhub-servicegraph
+
+jobs:
+  build-and-push:
+    name: Build & push multi-arch image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # required to push to ghcr.io
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # QEMU lets the runner execute foreign-arch binaries (needed for arm64 emulation)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Buildx is required for multi-platform builds
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Authenticate to ghcr.io with the workflow's GITHUB_TOKEN
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Derive image tags & labels from Git metadata:
+      #   - full semver tag  (e.g. 1.2.3)
+      #   - major.minor tag  (e.g. 1.2)
+      #   - major tag        (e.g. 1)
+      #   - :latest          (only on stable releases, not pre-releases)
+      #   - OCI labels       (source, revision, …)
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
+
+      - name: Build and push image
+        id: build-and-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache backed by the GitHub Actions cache
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Print the full image digest for traceability in the release notes
+      - name: Print image digest
+        run: echo "Image digest ${{ steps.build-and-push.outputs.digest }}"

@@ -6,7 +6,9 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/app"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
@@ -22,12 +24,38 @@ import (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "--healthcheck" {
+		healthCheck()
+		return
+	}
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: go run main.go <config.yaml>")
 		os.Exit(1)
 	}
 	configPath := os.Args[1]
 	simpleYaml(configPath)
+}
+
+// healthCheck probes the app's health endpoint and exits non-zero on failure.
+// Used by the Docker HEALTHCHECK instruction:
+//
+//	docker HEALTHCHECK CMD ["/app/servicegraph", "--healthcheck"]
+func healthCheck() {
+	port := os.Getenv("HEALTH_PORT")
+	if port == "" {
+		port = "8090"
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://localhost:" + port + "/health")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "health check returned status %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
 }
 
 func simpleYaml(path string) {

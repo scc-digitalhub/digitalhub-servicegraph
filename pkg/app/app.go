@@ -6,6 +6,9 @@ package app
 
 import (
 	"fmt"
+	"log"
+	"net/http"
+	"os"
 
 	"github.com/ohler55/ojg/jp"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
@@ -91,7 +94,34 @@ func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 	return nil
 }
 
+// startHealthServer starts a lightweight HTTP server that exposes GET /health.
+// The listening port is read from the HEALTH_PORT environment variable
+// (default: 8090). The server runs in a background goroutine for the
+// lifetime of the process.
+func startHealthServer() {
+	port := os.Getenv("HEALTH_PORT")
+	if port == "" {
+		port = "8090"
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"status":"ok"}`)
+	})
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+	log.Printf("health server listening on :%s", port)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("health server error: %v", err)
+	}
+}
+
 func (a *App) Run() error {
+	go startHealthServer()
+
 	converter, err := sources.RegistrySingleton.Get(a.graph.Input.Kind)
 	if err != nil {
 		return fmt.Errorf("failed to get source converter for kind %s: %w", a.graph.Input.Kind, err)
