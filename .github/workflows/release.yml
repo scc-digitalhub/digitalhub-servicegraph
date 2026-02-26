@@ -11,7 +11,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}   # scc-digitalhub/digitalhub-servicegraph
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
   build-and-push:
@@ -41,28 +41,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Derive image tags & labels from Git metadata:
-      #   - full semver tag  (e.g. 1.2.3)
-      #   - major.minor tag  (e.g. 1.2)
-      #   - major tag        (e.g. 1)
-      #   - :latest          (only on stable releases, not pre-releases)
-      #   - OCI labels       (source, revision, …)
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
 
       - name: Build and push image
         id: build-and-push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -70,6 +59,10 @@ jobs:
           # Layer cache backed by the GitHub Actions cache
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}
+            ${{ env.IMAGE_NAME }}:latest
+          labels: ${{ steps.meta.outputs.labels }}
 
       # Print the full image digest for traceability in the release notes
       - name: Print image digest
