@@ -5,6 +5,7 @@ This package implements a gRPC client node for the [Open Inference Protocol v2](
 ## Features
 
 - **gRPC Communication**: Efficient binary protocol for inference requests
+ - **Protocol**: Supports `grpc` (default) and `rest` (HTTP JSON) via the `protocol` config field
 - **Tensor Conversion**: Automatic conversion between binary data and inference protocol tensors
 - **Template Processing**: Flexible input/output transformation using Go templates
 - **Parallel Processing**: Configurable worker pool for concurrent inference requests
@@ -57,6 +58,8 @@ nodes:
         model_version: "1"                  # Optional model version
         num_instances: 4                    # Worker pool size
         timeout: 30                         # Request timeout in seconds
+        # Protocol to use: "grpc" or "rest" (defaults to "grpc")
+        protocol: "grpc"
 ```
 
 ### Advanced Configuration with Templates

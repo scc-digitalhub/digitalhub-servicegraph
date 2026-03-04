@@ -30,6 +30,8 @@ type Configuration struct {
 	OutputTensorSpec []TensorSpec `json:"output_tensor_spec,omitempty"`
 	// Timeout for gRPC calls in seconds
 	Timeout int `json:"timeout,omitempty"`
+	// Protocol to use: "grpc" or "rest". Defaults to "grpc" if empty.
+	Protocol string `json:"protocol,omitempty"`
 
 	InputTemplates []InputTemplateSpec `json:"input_templates,omitempty"`
 	OutputTemplate string              `json:"output_template,omitempty"`
@@ -65,6 +67,7 @@ func NewConfiguration(address, modelName string) *Configuration {
 		ModelName:           modelName,
 		NumInstances:        1,
 		Timeout:             30,
+		Protocol:            "grpc",
 		inputTemplateObjMap: make(map[string]*template.Template),
 	}
 	return conf

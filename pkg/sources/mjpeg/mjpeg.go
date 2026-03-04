@@ -5,16 +5,15 @@
 package mjpeg
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
@@ -118,34 +117,25 @@ func (s *MJPEGSource) streamFrames(ctx context.Context, output chan any) error {
 }
 
 func (s *MJPEGSource) extractBoundary(contentType string) string {
-	// Parse Content-Type header to extract boundary
-	// Expected format: multipart/x-mixed-replace;boundary=myboundary
-	// or with spaces: multipart/x-mixed-replace; boundary = myboundary
-
-	// First, find the "boundary" keyword
-	idx := bytes.Index([]byte(contentType), []byte("boundary"))
-	if idx == -1 {
+	// Look for "boundary=" and return the token after it
+	// Handle formats like: multipart/x-mixed-replace; boundary=--myboundary
+	parts := strings.Split(contentType, "boundary=")
+	if len(parts) < 2 {
 		return ""
 	}
-
-	// Get the substring starting from "boundary"
-	remaining := contentType[idx+len("boundary"):]
-
-	// Find the "=" sign
-	eqIdx := bytes.IndexByte([]byte(remaining), '=')
-	if eqIdx == -1 {
-		return ""
-	}
-
-	// Get everything after the "=" and trim spaces
-	boundary := bytes.TrimSpace([]byte(remaining[eqIdx+1:]))
-	return string(boundary)
+	b := strings.TrimSpace(parts[1])
+	// Trim possible surrounding quotes
+	b = strings.Trim(b, "\"'")
+	// If boundary starts with two dashes, strip them for multipart.Reader
+	b = strings.TrimPrefix(b, "--")
+	return b
 }
 
 // processMultipartStream reads and processes the multipart MJPEG stream
 func (s *MJPEGSource) processMultipartStream(ctx context.Context, body io.Reader, boundary string, output chan any) error {
-	reader := bufio.NewReader(body)
-	boundaryBytes := []byte(boundary)
+	// multipart.NewReader expects the boundary without the leading "--"
+	boundary = strings.TrimPrefix(boundary, "--")
+	mr := multipart.NewReader(body, boundary)
 	frameNum := int64(0)
 
 	for {
@@ -156,37 +146,25 @@ func (s *MJPEGSource) processMultipartStream(ctx context.Context, body io.Reader
 		default:
 		}
 
-		// Read until boundary
-		_, err := s.readUntil(reader, boundaryBytes)
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			// End of stream
+			return nil
+		}
 		if err != nil {
-			return fmt.Errorf("failed to read boundary: %w", err)
+			return fmt.Errorf("failed to read next part: %w", err)
 		}
 
-		// Read headers
-		headers, err := s.readHeaders(reader)
+		// Read full part content
+		frameData, err := io.ReadAll(part)
 		if err != nil {
-			return fmt.Errorf("failed to read headers: %w", err)
-		}
-
-		// Get content length
-		contentLength := s.getContentLength(headers)
-		if contentLength <= 0 {
-			s.logger.Warn("Invalid or missing Content-Length header")
-			continue
-		}
-
-		// Read frame data
-		frameData := make([]byte, contentLength)
-		_, err = io.ReadFull(reader, frameData)
-		if err != nil {
-			return fmt.Errorf("failed to read frame data: %w", err)
+			return fmt.Errorf("failed to read part data: %w", err)
 		}
 
 		frameNum++
 
-		// Apply processing factor (skip frames if needed)
-		if frameNum%int64(s.Conf.FrameInterval) == 0 {
-			// Create event and send to output
+		// Apply processing factor: process frames where (frameNum-1) % FrameInterval == 0
+		if (frameNum-1)%int64(s.Conf.FrameInterval) == 0 {
 			event := NewMJPEGEvent(ctx, frameData, frameNum, s.Conf.URL)
 			select {
 			case output <- event:
@@ -199,58 +177,6 @@ func (s *MJPEGSource) processMultipartStream(ctx context.Context, body io.Reader
 				slog.Int("factor", s.Conf.FrameInterval))
 		}
 	}
-}
-
-func (m *MJPEGSource) readUntil(reader *bufio.Reader, delimiter []byte) ([]byte, error) {
-	var result []byte
-	for {
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, line...)
-		if bytes.Contains(line, delimiter) {
-			return result, nil
-		}
-	}
-}
-
-func (m *MJPEGSource) readHeaders(reader *bufio.Reader) (map[string]string, error) {
-	headers := make(map[string]string)
-	for {
-		line, err := reader.ReadBytes('\n')
-		if err != nil {
-			return nil, err
-		}
-
-		// Empty line marks end of headers
-		trimmed := bytes.TrimSpace(line)
-		if len(trimmed) == 0 {
-			break
-		}
-
-		// Parse header
-		parts := bytes.SplitN(trimmed, []byte(":"), 2)
-		if len(parts) == 2 {
-			key := string(bytes.TrimSpace(parts[0]))
-			value := string(bytes.TrimSpace(parts[1]))
-			headers[key] = value
-		}
-	}
-	return headers, nil
-}
-
-func (m *MJPEGSource) getContentLength(headers map[string]string) int {
-	// Try different case variations
-	for _, key := range []string{"Content-Length", "content-length", "Content-length"} {
-		if val, ok := headers[key]; ok {
-			length, err := strconv.Atoi(val)
-			if err == nil && length > 0 {
-				return length
-			}
-		}
-	}
-	return 0
 }
 
 // init registers the MJPEG source in the sources registry

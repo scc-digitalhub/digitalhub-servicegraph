@@ -47,6 +47,25 @@ input:
     port: 8080
     capacity: 20
 ```
+### MJPEG Source
+Reads multipart MJPEG streams (commonly from IP cameras or video endpoints) and emits individual JPEG frames as events.
+
+**Configuration:**
+- `url` (string): MJPEG stream URL (required)
+- `frame_interval` (int): Process every Nth frame (default: 1 — all frames)
+- `read_timeout` (int): Read timeout in seconds (default: 10)
+
+**Usage:**
+```yaml
+input:
+  kind: "mjpeg"
+  spec:
+    url: "http://camera:8080/stream"
+    frame_interval: 10
+    read_timeout: 5
+```
+
+The MJPEG source emits events where `GetBody()` returns the JPEG bytes and `GetFrameNumber()` exposes the 1-based frame index.
 
 ## Sinks
 
@@ -212,6 +231,37 @@ Makes HTTP requests.
 - `num_instances` (int): Number of concurrent instances
 - `input_template` (string): Optional Go text template for input data
 - `output_template` (string): Optional Go text template for output data
+
+#### OpenInference Node
+Integrates with Open Inference Protocol v2 servers (for example Triton Inference Server or KServe) to perform model inference.
+
+**Spec Configuration (under `config.spec`):**
+- `address` (string): server address (host:port)
+- `model_name` (string): model name to call (required)
+- `model_version` (string): optional model version
+- `num_instances` (int): number of parallel workers (default: 1)
+- `timeout` (int): request timeout in seconds (default: 30)
+- `protocol` (string): `grpc` (default) or `rest`
+- `input_tensor_spec` ([]): list of input tensor specs (name, datatype, shape)
+- `output_tensor_spec` ([]): list of output tensor specs
+- `input_templates` / `output_template`: optional templates for input/output transformation
+
+**Usage:**
+```yaml
+- type: "service"
+  name: "triton-inference"
+  config:
+    kind: "openinference"
+    spec:
+      address: "triton:8001"
+      model_name: "resnet50"
+      num_instances: 4
+      protocol: "grpc"
+      input_tensor_spec:
+        - name: "input"
+          datatype: "FP32"
+          shape: [1, 3, 224, 224]
+```
 
 #### WebSocket Service
 Sends WebSocket messages.

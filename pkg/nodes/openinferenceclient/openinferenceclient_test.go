@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -128,9 +129,9 @@ func TestBuildInferRequest_SimpleInput(t *testing.T) {
 	if request.Inputs[0].Datatype != "FP32" {
 		t.Errorf("Expected datatype 'FP32', got: %s", request.Inputs[0].Datatype)
 	}
-	// Shape is [1, byte_length] when no template is used
-	if len(request.Inputs[0].Shape) != 2 || request.Inputs[0].Shape[0] != 1 || request.Inputs[0].Shape[1] != 12 {
-		t.Errorf("Expected shape [1, 12], got: %v", request.Inputs[0].Shape)
+	// Shape is [1, element_count] when no template is used (FP32 -> 12 bytes = 3 elements)
+	if len(request.Inputs[0].Shape) != 2 || request.Inputs[0].Shape[0] != 1 || request.Inputs[0].Shape[1] != 3 {
+		t.Errorf("Expected shape [1, 3], got: %v", request.Inputs[0].Shape)
 	}
 	if len(request.RawInputContents) != 1 {
 		t.Errorf("Expected 1 raw input, got: %d", len(request.RawInputContents))
@@ -163,7 +164,7 @@ func TestBuildInferRequest_DifferentDataTypes(t *testing.T) {
 				*(*int32)(unsafe.Pointer(&buf[8])) = 300
 				return buf
 			}(),
-			dataLength: 12,
+			dataLength: 3,
 		},
 		{
 			name:     "INT64",
@@ -174,7 +175,7 @@ func TestBuildInferRequest_DifferentDataTypes(t *testing.T) {
 				*(*int64)(unsafe.Pointer(&buf[8])) = 2000
 				return buf
 			}(),
-			dataLength: 16,
+			dataLength: 2,
 		},
 		{
 			name:     "FP32",
@@ -186,7 +187,7 @@ func TestBuildInferRequest_DifferentDataTypes(t *testing.T) {
 				*(*float32)(unsafe.Pointer(&buf[8])) = 3.5
 				return buf
 			}(),
-			dataLength: 12,
+			dataLength: 3,
 		},
 		{
 			name:     "FP64",
@@ -197,7 +198,7 @@ func TestBuildInferRequest_DifferentDataTypes(t *testing.T) {
 				*(*float64)(unsafe.Pointer(&buf[8])) = 2.71828
 				return buf
 			}(),
-			dataLength: 16,
+			dataLength: 2,
 		},
 		{
 			name:       "BYTES",
@@ -239,8 +240,23 @@ func TestBuildInferRequest_DifferentDataTypes(t *testing.T) {
 			if len(request.RawInputContents) != 1 {
 				t.Errorf("Expected 1 raw input, got: %d", len(request.RawInputContents))
 			}
-			if len(request.RawInputContents[0]) != int(tt.dataLength) {
-				t.Errorf("Expected %d bytes in raw input, got: %d", tt.dataLength, len(request.RawInputContents[0]))
+			// raw input contents should retain original byte length
+			expectedRawBytes := int(tt.dataLength)
+			switch strings.ToUpper(tt.dataType) {
+			case "INT16", "UINT16", "FP16":
+				expectedRawBytes = expectedRawBytes * 2
+			case "INT32", "UINT32", "FP32":
+				expectedRawBytes = expectedRawBytes * 4
+			case "INT64", "UINT64", "FP64":
+				expectedRawBytes = expectedRawBytes * 8
+			case "BOOL", "INT8", "UINT8":
+				expectedRawBytes = expectedRawBytes * 1
+			case "BYTES":
+				// dataLength already bytes
+				expectedRawBytes = int(tt.dataLength)
+			}
+			if len(request.RawInputContents[0]) != expectedRawBytes {
+				t.Errorf("Expected %d bytes in raw input, got: %d", expectedRawBytes, len(request.RawInputContents[0]))
 			}
 		})
 	}
@@ -578,9 +594,9 @@ func TestExtractTensorData_AllTypes(t *testing.T) {
 			datatype: "BYTES",
 			contents: &pb.InferTensorContents{BytesContents: [][]byte{[]byte("hello"), []byte("world")}},
 			validate: func(t *testing.T, data interface{}) {
-				bytes, ok := data.([][]byte)
-				if !ok || len(bytes) != 2 {
-					t.Errorf("Expected 2 byte arrays, got: %v", data)
+				strings, ok := data.([]string)
+				if !ok || len(strings) != 2 {
+					t.Errorf("Expected 2 strings, got: %v", data)
 				}
 			},
 		},
@@ -744,6 +760,31 @@ func TestOpenInferenceClient_Channels(t *testing.T) {
 	if oic.Out() == nil {
 		t.Error("Expected Out() channel, got nil")
 	}
+}
+
+func TestNewOpenInferenceClient_UnsupportedProtocol(t *testing.T) {
+	conf := NewConfiguration("localhost:8001", "test-model")
+	conf.Protocol = "invalid-proto"
+	_, err := NewOpenInferenceClient(*conf)
+	if err == nil {
+		t.Fatalf("expected error for unsupported protocol, got nil")
+	}
+}
+
+func TestNewOpenInferenceClient_REST_NoGRPCConn(t *testing.T) {
+	conf := NewConfiguration("http://example.invalid", "test-model")
+	conf.Protocol = "rest"
+	oic, err := NewOpenInferenceClient(*conf)
+	if err != nil {
+		t.Fatalf("unexpected error creating rest client: %v", err)
+	}
+	if oic.conn != nil {
+		t.Errorf("expected no grpc conn for rest protocol, got non-nil")
+	}
+	if oic.client != nil {
+		t.Errorf("expected no grpc client for rest protocol, got non-nil")
+	}
+	_ = oic.Close()
 }
 
 func TestOpenInferenceClient_Via(t *testing.T) {

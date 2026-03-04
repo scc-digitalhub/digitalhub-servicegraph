@@ -5,10 +5,15 @@
 package openinferenceclient
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,27 +42,47 @@ var _ streams.Flow = (*OpenInferenceClient)(nil)
 
 // NewOpenInferenceClient creates a new OpenInferenceClient operator
 func NewOpenInferenceClient(conf Configuration) (*OpenInferenceClient, error) {
-	// Create gRPC connection
-	conn, err := createGRPCConnection(conf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create gRPC connection: %w", err)
+	// Ensure protocol default
+	if conf.Protocol == "" {
+		conf.Protocol = "grpc"
 	}
 
-	// Create gRPC client
-	client := pb.NewGRPCInferenceServiceClient(conn)
+	proto := strings.ToLower(conf.Protocol)
+	if proto == "grpc" {
+		// Create gRPC connection
+		conn, err := createGRPCConnection(conf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gRPC connection: %w", err)
+		}
 
-	oic := &OpenInferenceClient{
-		conf:   conf,
-		in:     make(chan any),
-		out:    make(chan any),
-		client: client,
-		conn:   conn,
+		// Create gRPC client
+		client := pb.NewGRPCInferenceServiceClient(conn)
+
+		oic := &OpenInferenceClient{
+			conf:   conf,
+			in:     make(chan any),
+			out:    make(chan any),
+			client: client,
+			conn:   conn,
+		}
+
+		// Start processing stream elements
+		go oic.stream()
+
+		return oic, nil
 	}
 
-	// Start processing stream elements
-	go oic.stream()
+	if proto == "rest" {
+		oic := &OpenInferenceClient{
+			conf: conf,
+			in:   make(chan any),
+			out:  make(chan any),
+		}
+		go oic.stream()
+		return oic, nil
+	}
 
-	return oic, nil
+	return nil, fmt.Errorf("unsupported protocol: %s", conf.Protocol)
 }
 
 // Via asynchronously streams data to the given Flow and returns it
@@ -124,14 +149,75 @@ func (oic *OpenInferenceClient) stream() {
 func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 	rootContext := msg.GetContext()
 
-	// Create span for gRPC call
 	tr := otel.Tracer("openinference/client")
-	childCtx, span := tr.Start(rootContext, "OpenInference gRPC Client Node")
+	proto := strings.ToLower(oic.conf.Protocol)
+
+	if proto == "rest" {
+		_, span := tr.Start(rootContext, "OpenInference REST Client Node")
+		defer span.End()
+
+		// Build inference request from input
+		request, err := oic.buildInferRequest(msg)
+		if err != nil {
+			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to build request: %w", err), 500)
+		}
+
+		// Build REST JSON request according to Open Inference REST spec
+		restReq := buildRESTRequestFromProto(request)
+		reqJSON, err := json.Marshal(restReq)
+		if err != nil {
+			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to marshal rest request: %w", err), 500)
+		}
+
+		// Prepare URL
+		address := oic.conf.Address
+		if !strings.HasPrefix(address, "http://") && !strings.HasPrefix(address, "https://") {
+			address = "http://" + address
+		}
+		url := strings.TrimRight(address, "/") + fmt.Sprintf("/v2/models/%s/infer", oic.conf.ModelName)
+
+		// HTTP POST
+		httpClient := &http.Client{Timeout: time.Duration(oic.conf.Timeout) * time.Second}
+		resp, err := httpClient.Post(url, "application/json", bytes.NewReader(reqJSON))
+		if err != nil {
+			return streams.NewErrorEvent(rootContext, fmt.Errorf("rest inference failed: %w", err), 500)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			b, _ := io.ReadAll(resp.Body)
+			return streams.NewErrorEvent(rootContext, fmt.Errorf("rest inference returned status %d: %s", resp.StatusCode, string(b)), 500)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to read rest response: %w", err), 500)
+		}
+
+		// Unmarshal into REST response model
+		var restResp RESTInferResponse
+		if err := json.Unmarshal(body, &restResp); err != nil {
+			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to unmarshal rest response: %w", err), 500)
+		}
+
+		// Convert REST response to protobuf ModelInferResponse
+		response := convertRESTResponseToProto(&restResp)
+
+		// Process response
+		result, err := oic.processResponse(rootContext, response)
+		if err != nil {
+			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to process response: %w", err), 500)
+		}
+		return result
+	}
+
+	// Default: gRPC
+	_, span := tr.Start(rootContext, "OpenInference gRPC Client Node")
 	defer span.End()
 
 	// Set timeout context
 	timeout := time.Duration(oic.conf.Timeout) * time.Second
-	ctx, cancel := context.WithTimeout(childCtx, timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Build inference request from input
@@ -179,8 +265,13 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 		}
 		// no templates: consider a single tensor using raw body as input
 	} else {
-		mapData[oic.conf.InputTensorSpec[0].Name] = msg.GetBody()
-		mapLen[oic.conf.InputTensorSpec[0].Name] = int64(len(msg.GetBody()))
+		// No templates: use raw body. Determine element count based on datatype
+		raw := msg.GetBody()
+		name := oic.conf.InputTensorSpec[0].Name
+		mapData[name] = raw
+		// compute element count
+		elemCount := computeElementCount(oic.conf.InputTensorSpec[0].DataType, len(raw))
+		mapLen[name] = elemCount
 	}
 
 	// Build the inference request
@@ -305,6 +396,274 @@ func (oic *OpenInferenceClient) buildInferInputTensor(length int64, inputSpec Te
 	return tensor, nil
 }
 
+// computeElementCount returns number of elements for the given dataType and raw byte length.
+func computeElementCount(dataType string, byteLen int) int64 {
+	switch strings.ToUpper(dataType) {
+	case "BOOL", "INT8", "UINT8":
+		return int64(byteLen)
+	case "INT16", "UINT16", "FP16":
+		if byteLen%2 != 0 {
+			return int64(byteLen) // fallback to bytes
+		}
+		return int64(byteLen / 2)
+	case "INT32", "UINT32", "FP32":
+		if byteLen%4 != 0 {
+			return int64(byteLen)
+		}
+		return int64(byteLen / 4)
+	case "INT64", "UINT64", "FP64":
+		if byteLen%8 != 0 {
+			return int64(byteLen)
+		}
+		return int64(byteLen / 8)
+	case "BYTES":
+		// BYTES is treated as raw bytes length
+		return int64(byteLen)
+	default:
+		return int64(byteLen)
+	}
+}
+
+// REST request/response models (simplified per Open Inference REST spec)
+type RESTInferInput struct {
+	Name     string  `json:"name"`
+	Datatype string  `json:"datatype"`
+	Shape    []int64 `json:"shape,omitempty"`
+	// Data contains the typed values for the input (arrays or base64 strings for BYTES)
+	Data []interface{} `json:"data,omitempty"`
+}
+
+type RESTInferRequest struct {
+	ModelName    string            `json:"model_name"`
+	ModelVersion string            `json:"model_version,omitempty"`
+	Parameters   map[string]string `json:"parameters,omitempty"`
+	Inputs       []RESTInferInput  `json:"inputs,omitempty"`
+}
+
+type RESTInferOutput struct {
+	Name              string        `json:"name"`
+	Datatype          string        `json:"datatype,omitempty"`
+	Shape             []int64       `json:"shape,omitempty"`
+	Data              []interface{} `json:"data,omitempty"`
+	RawOutputContents []string      `json:"raw_output_contents,omitempty"`
+}
+
+type RESTInferResponse struct {
+	ModelName    string            `json:"model_name,omitempty"`
+	ModelVersion string            `json:"model_version,omitempty"`
+	Id           string            `json:"id,omitempty"`
+	Outputs      []RESTInferOutput `json:"outputs,omitempty"`
+}
+
+// buildRESTRequestFromProto builds a REST request using the proto request as a source.
+func buildRESTRequestFromProto(req *pb.ModelInferRequest) *RESTInferRequest {
+	r := &RESTInferRequest{
+		ModelName:    req.ModelName,
+		ModelVersion: req.ModelVersion,
+		Parameters:   make(map[string]string),
+	}
+	for k, v := range req.Parameters {
+		if v != nil {
+			if s := v.GetStringParam(); s != "" {
+				r.Parameters[k] = s
+			}
+		}
+	}
+
+	// Inputs: include name/datatype/shape and populate Data from RawInputContents when available
+	for i, in := range req.Inputs {
+		input := RESTInferInput{
+			Name:     in.Name,
+			Datatype: in.Datatype,
+			Shape:    in.Shape,
+		}
+
+		// If raw input bytes were provided, try to convert them to typed arrays
+		if i < len(req.RawInputContents) {
+			raw := req.RawInputContents[i]
+			// For BYTES, send base64 string in data array
+			if strings.ToUpper(in.Datatype) == "BYTES" {
+				input.Data = []interface{}{base64.StdEncoding.EncodeToString(raw)}
+			} else {
+				// Convert bytes to typed tensor values
+				if v, err := util.BytesToTensor(in.Datatype, raw); err == nil {
+					input.Data = convertToInterfaceSlice(v)
+				} else {
+					// fallback: send base64
+					input.Data = []interface{}{base64.StdEncoding.EncodeToString(raw)}
+				}
+			}
+		}
+
+		r.Inputs = append(r.Inputs, input)
+	}
+
+	return r
+}
+
+// convertRESTResponseToProto converts REST response into a protobuf ModelInferResponse
+func convertRESTResponseToProto(rest *RESTInferResponse) *pb.ModelInferResponse {
+	resp := &pb.ModelInferResponse{
+		ModelName:    rest.ModelName,
+		ModelVersion: rest.ModelVersion,
+		Id:           rest.Id,
+	}
+
+	for _, out := range rest.Outputs {
+		o := &pb.ModelInferResponse_InferOutputTensor{
+			Name:     out.Name,
+			Datatype: out.Datatype,
+			Shape:    out.Shape,
+		}
+
+		// Prefer typed Data if present
+		if len(out.Data) > 0 {
+			// Convert interface slice to appropriate typed contents based on datatype
+			contents := &pb.InferTensorContents{}
+			switch strings.ToUpper(o.Datatype) {
+			case "FP32":
+				fp := make([]float32, len(out.Data))
+				for i, v := range out.Data {
+					// JSON numbers are float64 by default
+					if num, ok := v.(float64); ok {
+						fp[i] = float32(num)
+					}
+				}
+				contents.Fp32Contents = fp
+			case "FP64":
+				fp := make([]float64, len(out.Data))
+				for i, v := range out.Data {
+					if num, ok := v.(float64); ok {
+						fp[i] = num
+					}
+				}
+				contents.Fp64Contents = fp
+			case "INT32", "INT16", "INT8":
+				ints := make([]int32, len(out.Data))
+				for i, v := range out.Data {
+					if num, ok := v.(float64); ok {
+						ints[i] = int32(num)
+					}
+				}
+				contents.IntContents = ints
+			case "INT64":
+				l := make([]int64, len(out.Data))
+				for i, v := range out.Data {
+					if num, ok := v.(float64); ok {
+						l[i] = int64(num)
+					}
+				}
+				contents.Int64Contents = l
+			case "BYTES":
+				b := make([][]byte, len(out.Data))
+				for i, v := range out.Data {
+					if s, ok := v.(string); ok {
+						b[i] = []byte(s)
+					}
+				}
+				contents.BytesContents = b
+			default:
+				// fallback: try to decode as floats
+				fp := make([]float32, len(out.Data))
+				for i, v := range out.Data {
+					if num, ok := v.(float64); ok {
+						fp[i] = float32(num)
+					}
+				}
+				contents.Fp32Contents = fp
+			}
+			o.Contents = contents
+		} else if len(out.RawOutputContents) > 0 {
+			// Decode base64 raw outputs
+			raw := make([][]byte, len(out.RawOutputContents))
+			for i, s := range out.RawOutputContents {
+				if b, err := base64.StdEncoding.DecodeString(s); err == nil {
+					raw[i] = b
+				}
+			}
+			resp.RawOutputContents = append(resp.RawOutputContents, raw...)
+		}
+
+		resp.Outputs = append(resp.Outputs, o)
+	}
+
+	return resp
+}
+
+// convertToInterfaceSlice converts supported slice types to []interface{} for JSON marshalling
+func convertToInterfaceSlice(v any) []interface{} {
+	switch s := v.(type) {
+	case []bool:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []int:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []int16:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []int32:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []int64:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []uint16:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []uint32:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []uint64:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []float32:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = float64(v)
+		}
+		return out
+	case []float64:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	case []string:
+		out := make([]interface{}, len(s))
+		for i, v := range s {
+			out[i] = v
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 // processResponse processes the inference response
 func (oic *OpenInferenceClient) processResponse(ctx context.Context, response *pb.ModelInferResponse) (streams.Event, error) {
 	// Convert response to JSON
@@ -386,7 +745,12 @@ func (oic *OpenInferenceClient) extractTensorData(datatype string, contents *pb.
 	case "FP64":
 		return contents.Fp64Contents
 	case "BYTES":
-		return contents.BytesContents
+		// convert [][]byte to []string
+		strContents := make([]string, len(contents.BytesContents))
+		for i, b := range contents.BytesContents {
+			strContents[i] = string(b)
+		}
+		return strContents
 	default:
 		return nil
 	}
