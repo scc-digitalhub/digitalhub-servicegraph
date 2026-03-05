@@ -1,0 +1,37 @@
+input:
+  kind: "mjpeg"
+  spec:
+    url: "http://go2rtc:1984/api/stream.mjpeg?src=example"
+    frame_interval: 10    
+    read_timeout: 10
+
+output:
+  kind: "stdout"
+  spec: {}
+
+flow:
+  type: "sequence"
+  name: "vqa-pipeline"
+  nodes:
+    - type: "service"
+      name: "blip-vqa-service"
+      config:
+        kind: "openinference"
+        spec:
+          address: "vqa:9000"
+          model_name: "vqa_blip"
+          num_instances: 4  
+          timeout: 10      
+          input_tensor_spec:
+            - name: "image"
+              datatype: "UINT8"
+              shape: [-1, -1]
+          output_tensor_spec:
+            - name: "caption"
+              datatype: "BYTES"
+              shape: [-1, -1]
+                    
+          output_template: |
+            {
+              "caption": {{. | jp "$.outputs[0].data" }},
+            }

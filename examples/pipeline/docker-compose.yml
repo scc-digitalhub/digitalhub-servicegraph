@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  go2rtc:
+    image: alexxit/go2rtc
+    privileged: true         # only for FFmpeg hardware transcoding
+    restart: unless-stopped  # autorestart on fail or config change from WebUI
+    volumes:
+      - "./config:/config"  
+    ports:
+      - "1985:1984"
+  vqa:
+    build:
+      context: .
+      dockerfile: Dockerfile-vqa
+    image: oi-vqa-test:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      PYTHONPATH: /workspace
+      NUCLIO_PYTHON_WRAPPER_PATH: /workspace/_nuclio_wrapper.py
+    command: ["/usr/local/bin/processor", "--config=/workspace/vqa-openinference-processor.yaml"]
+    ports:
+      - "8081:8080"
+      - "9001:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/v2/health/live')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s      
+  anonymization:
+    build:
+      context: .
+      dockerfile: Dockerfile-anonymization
+    image: oi-anonymization-test:latest
+    # working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      PYTHONPATH: /workspace
+      NUCLIO_PYTHON_WRAPPER_PATH: /workspace/_nuclio_wrapper.py
+    command: ["/usr/local/bin/processor", "--config=/workspace/anonymization-openinference-processor.yaml"]
+    ports:
+      - "8082:8080"
+      - "9002:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/v2/health/live')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s      
+  # servicegraph:
+  #   image: ghcr.io/scc-digitalhub/digitalhub-servicegraph:0.1.0_b1
+  #   volumes:
+  #     - ./:/workspace
+  #   command: "/workspace/pipeline.yaml"
+  #   depends_on:
+  #     vqa:
+  #       condition: service_healthy
+  #     anonymization:
+  #       condition: service_healthy
+  #     go2rtc:
+  #       condition: service_started
+
+networks:
+  default:
+    driver: bridge

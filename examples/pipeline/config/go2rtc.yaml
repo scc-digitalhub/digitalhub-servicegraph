@@ -1,0 +1,2 @@
+streams:
+  example: ffmpeg:/config/video.mp4#video=mjpeg

@@ -5,7 +5,7 @@ services:
   vqa-service:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.v2
     container_name: vqa-blip-service
     ports:
       - "8000:8000"
@@ -21,7 +21,7 @@ services:
     # Uncomment for GPU support (requires nvidia-docker)
     # deploy:
     #   resources:
-    #     reservations:
+    #     reservations:l
     #       devices:
     #         - driver: nvidia
     #           count: 1

@@ -53,7 +53,8 @@ flow:
         kind: "openinference"
         spec:
           # Triton server gRPC endpoint
-          address: "localhost:8001"
+          # address: "localhost:8000"
+          address: "localhost:9000"
           
           # Model configuration
           model_name: "vqa_blip"
@@ -61,7 +62,10 @@ flow:
           # Performance tuning
           num_instances: 4  # Parallel workers
           timeout: 10       # Request timeout in seconds
-          
+          # protocol: rest
+
+          # params:
+          #   question: "Respond with the main color of the image."
           # Tensor specifications
           # Define the structure of input/output tensors
           input_tensor_spec:
