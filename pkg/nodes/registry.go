@@ -20,9 +20,14 @@ var RegistrySingleton = Registry{
 }
 
 type Converter interface {
-	Convert(spec model.NodeConfig) (streams.Flow, error)
+	// Convert constructs a Flow from the node's configuration.
+	// The pointer allows Convert to cache parsed config on the NodeConfig
+	// so subsequent calls skip re-parsing (safe for concurrent use).
+	Convert(spec *model.NodeConfig) (streams.Flow, error)
 }
 
 type Validator interface {
-	Validate(spec model.NodeConfig) error
+	// Validate checks the node configuration for correctness without building
+	// the full Flow.
+	Validate(spec *model.NodeConfig) error
 }

@@ -502,7 +502,7 @@ func TestProcessResponse_SimpleOutput(t *testing.T) {
 		},
 	}
 
-	event, err := oic.processResponse(context.Background(), response)
+	event, err := oic.processResponse(context.Background(), response, 200)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -991,7 +991,7 @@ func TestOpenInferenceProcessor_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := proc.Validate(tt.spec)
+			err := proc.Validate(&tt.spec)
 			if tt.expectErr && err == nil {
 				t.Error("Expected validation error, got nil")
 			}
@@ -1019,7 +1019,7 @@ func TestOpenInferenceProcessor_Convert(t *testing.T) {
 
 	// This will fail because we can't connect to a real server
 	// but we can verify the error is about connection, not parsing
-	_, err := proc.Convert(spec)
+	_, err := proc.Convert(&spec)
 	if err == nil {
 		t.Log("Convert succeeded (unexpected if no server is running)")
 	} else {

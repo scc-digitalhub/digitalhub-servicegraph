@@ -279,7 +279,7 @@ type HTTPProcessor struct {
 	nodes.Validator
 }
 
-func (c *HTTPProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
+func (c *HTTPProcessor) Convert(spec *model.NodeConfig) (streams.Flow, error) {
 	// marshal to json, unmarshal to config
 	var newConf *Configuration
 	if cached := spec.ConfigCache(); cached != nil {
@@ -302,7 +302,7 @@ func (c *HTTPProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
 	return src, nil
 }
 
-func (c *HTTPProcessor) Validate(spec model.NodeConfig) error {
+func (c *HTTPProcessor) Validate(spec *model.NodeConfig) error {
 	// marshal to json, unmarshal to config
 	conf := &Configuration{}
 	err := util.Convert(spec.Spec, conf)

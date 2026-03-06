@@ -55,7 +55,7 @@ func NewOpenInferenceClient(conf Configuration) (*OpenInferenceClient, error) {
 		slog.Group("node",
 			slog.String("type", "openinference"),
 			slog.String("protocol", conf.Protocol),
-			slog.String("model", conf.ModelName),
+			slog.String("model_name", conf.ModelName),
 			slog.String("address", conf.Address),
 		))
 
@@ -67,7 +67,7 @@ func NewOpenInferenceClient(conf Configuration) (*OpenInferenceClient, error) {
 	proto := strings.ToLower(conf.Protocol)
 	if proto == "grpc" {
 		// Create gRPC connection
-		conn, err := createGRPCConnection(conf)
+		conn, err := createGRPCConnection(conf, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create gRPC connection: %w", err)
 		}
@@ -170,15 +170,7 @@ func (oic *OpenInferenceClient) stream() {
 			}()
 			oic.getLogger().Debug("Worker started", slog.Int("worker_id", workerID))
 			for element := range oic.in {
-				// Pass error events through without invoking inference.
-				if ev, ok := element.(streams.Event); ok && ev.GetStatus() >= 400 {
-					oic.getLogger().Debug("Passing through error event",
-						slog.Int("status", ev.GetStatus()),
-						slog.Int("worker_id", workerID))
-					oic.out <- element
-					continue
-				}
-				oic.getLogger().Debug("Received element for inference", slog.String("model", oic.conf.ModelName), slog.Int("worker_id", workerID))
+				oic.getLogger().Debug("Received element for inference", slog.String("model_name", oic.conf.ModelName), slog.Int("worker_id", workerID))
 				ctx := streams.ExtractContext(element)
 				oic.out <- oic.infer(streams.NewEventFrom(ctx, element))
 			}
@@ -239,6 +231,7 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 		httpClient := &http.Client{Timeout: time.Duration(oic.conf.Timeout) * time.Second}
 		var body []byte
 		var restErr error
+		restStatusCode := 0
 		for attempt := 1; attempt <= oic.conf.MaxRetries+1; attempt++ {
 			var resp *http.Response
 			resp, restErr = httpClient.Post(url, "application/json", bytes.NewReader(reqJSON))
@@ -278,6 +271,7 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 			if restErr != nil {
 				return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to read rest response: %w", restErr), 500)
 			}
+			restStatusCode = resp.StatusCode
 			restErr = nil
 			break
 		}
@@ -301,8 +295,8 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 		// Convert REST response to protobuf ModelInferResponse
 		response := convertRESTResponseToProto(&restResp)
 
-		// Process response
-		result, err := oic.processResponse(rootContext, response)
+		// Process response, forwarding the actual HTTP status code.
+		result, err := oic.processResponse(rootContext, response, restStatusCode)
 		if err != nil {
 			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to process response: %w", err), 500)
 		}
@@ -362,7 +356,7 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 	)
 
 	// Process response
-	result, err := oic.processResponse(rootContext, response)
+	result, err := oic.processResponse(rootContext, response, 200)
 	if err != nil {
 		return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to process response: %w", err), 500)
 	}
@@ -387,7 +381,7 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 				strBody := string(msg.GetBody())
 				oic.getLogger().Debug("Applying input template",
 					slog.String("tensor_name", tensorSpec.Name),
-					slog.String("template", strBody),
+					slog.String("input_body", strBody),
 				)
 				data, err := util.ConvertBody(msg.GetBody(), oic.conf.inputTemplateObjMap[tensorSpec.Name])
 				strData := string(data)
@@ -743,7 +737,7 @@ func convertToInterfaceSlice(v any) []interface{} {
 }
 
 // processResponse processes the inference response
-func (oic *OpenInferenceClient) processResponse(ctx context.Context, response *pb.ModelInferResponse) (streams.Event, error) {
+func (oic *OpenInferenceClient) processResponse(ctx context.Context, response *pb.ModelInferResponse, statusCode int) (streams.Event, error) {
 	oic.getLogger().Debug("Processing inference response",
 		slog.String("model_name", response.ModelName),
 		slog.String("model_version", response.ModelVersion),
@@ -803,7 +797,7 @@ func (oic *OpenInferenceClient) processResponse(ctx context.Context, response *p
 	// Create result event
 	result, err := streams.NewGenericEventBuilder(ctx).
 		WithBody(finalData).
-		WithStatus(200).
+		WithStatus(statusCode).
 		Build()
 	if err != nil {
 		return nil, err
@@ -853,30 +847,24 @@ func isRetryableGRPCError(err error) bool {
 		code == codes.ResourceExhausted
 }
 
-// createGRPCConnection creates a gRPC connection with the specified configuration
-func createGRPCConnection(conf Configuration) (*grpc.ClientConn, error) {
-	slog.Default().Debug("Dialing gRPC server",
+// createGRPCConnection creates a gRPC connection with the specified configuration.
+// grpc.NewClient creates a lazily-connected client; the first RPC will trigger
+// the actual TCP dial (controlled by the per-call timeout set in infer()).
+func createGRPCConnection(conf Configuration, logger *slog.Logger) (*grpc.ClientConn, error) {
+	logger.Debug("Creating gRPC client",
 		slog.String("address", conf.Address),
-		slog.String("model", conf.ModelName),
+		slog.String("model_name", conf.ModelName),
 	)
 
-	var opts []grpc.DialOption
-
-	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-
-	// Add other options
-	opts = append(opts, grpc.WithBlock())
-
-	// Create connection with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, conf.Address, opts...)
+	conn, err := grpc.NewClient(
+		conf.Address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial gRPC server: %w", err)
+		return nil, fmt.Errorf("failed to create gRPC client: %w", err)
 	}
 
-	slog.Default().Debug("gRPC connection ready", slog.String("address", conf.Address))
+	logger.Debug("gRPC client created", slog.String("address", conf.Address))
 	return conn, nil
 }
 
@@ -892,7 +880,7 @@ type OpenInferenceProcessor struct {
 }
 
 // Convert creates an OpenInferenceClient from the node configuration
-func (p *OpenInferenceProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
+func (p *OpenInferenceProcessor) Convert(spec *model.NodeConfig) (streams.Flow, error) {
 	// Check cache first
 	if cached := spec.ConfigCache(); cached != nil {
 		conf := (*cached).(*Configuration)
@@ -924,7 +912,7 @@ func (p *OpenInferenceProcessor) Convert(spec model.NodeConfig) (streams.Flow, e
 }
 
 // Validate validates the node configuration
-func (p *OpenInferenceProcessor) Validate(spec model.NodeConfig) error {
+func (p *OpenInferenceProcessor) Validate(spec *model.NodeConfig) error {
 	conf := &Configuration{}
 	err := util.Convert(spec.Spec, conf)
 	if err != nil {

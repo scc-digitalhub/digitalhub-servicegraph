@@ -5,6 +5,8 @@
 package model
 
 import (
+	"sync"
+
 	"github.com/ohler55/ojg/jp"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 )
@@ -63,15 +65,25 @@ func (n *Node) ConditionExpression() jp.Expr {
 type NodeConfig struct {
 	Kind        string                 `json:"kind"`
 	Spec        map[string]interface{} `json:"spec,omitempty"`
+	mu          sync.Mutex             //nolint:govet // mutex must not be copied; always use *NodeConfig
 	configCache *any
 }
 
+// ConfigCache returns the cached parsed configuration, or nil if not yet set.
 func (c *NodeConfig) ConfigCache() *any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.configCache
 }
 
+// SetConfigCache stores a parsed configuration. Only the first call takes effect;
+// subsequent calls are no-ops, making this safe for concurrent use.
 func (c *NodeConfig) SetConfigCache(t any) {
-	c.configCache = &t
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.configCache == nil {
+		c.configCache = &t
+	}
 }
 
 type InputSpec struct {
@@ -87,4 +99,5 @@ type Graph struct {
 	Input  *InputSpec  `json:"input"`
 	Flow   *Node       `json:"flow"`
 	Output *OutputSpec `json:"output,omitempty"`
+	Error  *OutputSpec `json:"error,omitempty"`
 }

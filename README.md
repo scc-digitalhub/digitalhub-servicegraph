@@ -177,6 +177,17 @@ output:
   kind: "ignore"
 ```
 
+### Errorlog Sink
+Captures error events produced by the pipeline and writes them to the application log. Assign it to the top-level `error` field so that processing errors are routed here instead of being silently dropped.
+
+**Configuration:** None required.
+
+**Usage:**
+```yaml
+error:
+  kind: "errorlog"
+```
+
 ## Flow Nodes
 
 Flow nodes define the processing logic of the data pipeline. Nodes can be composed hierarchically.
@@ -538,6 +549,11 @@ flow:           # Processing flow
 output:         # Optional output sink
   kind: string  # Sink type
   spec:         # Sink-specific configuration
+    # ... sink config
+
+error:          # Optional error sink — receives events with status >= 400
+  kind: string  # Sink type (e.g. "errorlog")
+  spec:         # Sink-specific configuration (if any)
     # ... sink config
 ```
 

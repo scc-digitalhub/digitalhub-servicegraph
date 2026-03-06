@@ -282,7 +282,7 @@ type WSProcessor struct {
 	nodes.Validator
 }
 
-func (c *WSProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
+func (c *WSProcessor) Convert(spec *model.NodeConfig) (streams.Flow, error) {
 	var newConf *Configuration
 	if cached := spec.ConfigCache(); cached != nil {
 		newConf = (*cached).(*Configuration)
@@ -308,7 +308,7 @@ func (c *WSProcessor) Convert(spec model.NodeConfig) (streams.Flow, error) {
 	return src, nil
 }
 
-func (c *WSProcessor) Validate(spec model.NodeConfig) error {
+func (c *WSProcessor) Validate(spec *model.NodeConfig) error {
 	// marshal to json, unmarshal to config
 	conf := &Configuration{}
 	err := util.Convert(spec.Spec, conf)

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"math"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -121,10 +122,10 @@ func TestIntegration_EndToEnd(t *testing.T) {
 
 // TestIntegration_MultipleRequests tests handling multiple concurrent requests
 func TestIntegration_MultipleRequests(t *testing.T) {
-	requestCount := 0
+	var requestCount atomic.Int32
 	mockServer := &mockInferenceServer{
 		modelInferFunc: func(ctx context.Context, req *pb.ModelInferRequest) (*pb.ModelInferResponse, error) {
-			requestCount++
+			requestCount.Add(1)
 			return &pb.ModelInferResponse{
 				ModelName:    req.ModelName,
 				ModelVersion: "1",

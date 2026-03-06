@@ -65,17 +65,17 @@ func TestNewConfigurationCopies(t *testing.T) {
 func TestWSProcessorValidate(t *testing.T) {
 	proc := &WSProcessor{}
 	spec := model.NodeConfig{Kind: "websocket", Spec: map[string]interface{}{"url": ""}}
-	if err := proc.Validate(spec); err == nil {
+	if err := proc.Validate(&spec); err == nil {
 		t.Fatalf("expected validation error for missing url")
 	}
 	// valid
 	spec = model.NodeConfig{Kind: "websocket", Spec: map[string]interface{}{"url": "ws://example", "msgType": float64(ws.TextMessage)}}
-	if err := proc.Validate(spec); err != nil {
+	if err := proc.Validate(&spec); err != nil {
 		t.Fatalf("expected no error for valid spec, got %v", err)
 	}
 	// invalid msgType
 	spec = model.NodeConfig{Kind: "websocket", Spec: map[string]interface{}{"url": "ws://example", "msgType": float64(99)}}
-	if err := proc.Validate(spec); err == nil {
+	if err := proc.Validate(&spec); err == nil {
 		t.Fatalf("expected validation error for invalid msgType")
 	}
 }
@@ -104,7 +104,7 @@ func TestWSProcessorConvert(t *testing.T) {
 		},
 	}
 
-	flow, err := proc.Convert(spec)
+	flow, err := proc.Convert(&spec)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

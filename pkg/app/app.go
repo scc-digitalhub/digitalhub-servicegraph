@@ -14,6 +14,7 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks"
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/errorlog"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams/flow"
@@ -22,7 +23,8 @@ import (
 
 type App struct {
 	sources.FlowFactory
-	graph *model.Graph
+	graph   *model.Graph
+	errorCh chan any // fan-in channel that receives error events from all ErrorFilters
 }
 
 var validNodeTypes = map[model.NodeType]bool{
@@ -49,19 +51,27 @@ func (a *App) GenerateFlow(source streams.Source, sink streams.Sink) {
 		// the error is visible rather than producing a silent nil-pointer crash.
 		panic(fmt.Sprintf("failed to build processing flow: %v", err))
 	}
-	f.To(sink)
+	// Insert a graph-level ErrorFilter so that error events (status >= 400) are
+	// diverted to the dedicated error sink instead of reaching the output sink.
+	ef := flow.NewErrorFilter(1)
+	go func() {
+		for e := range ef.ErrOut() {
+			a.errorCh <- e
+		}
+	}()
+	f.Via(ef).To(sink)
 }
 
 func generateFlow(outlet streams.Source, node *model.Node) (streams.Flow, error) {
 	switch node.Type {
 	case model.Sequence:
 		var f streams.Flow
-		for _, child := range node.Nodes {
+		for i := range node.Nodes {
 			var err error
 			if f == nil {
-				f, err = generateFlow(outlet, &child)
+				f, err = generateFlow(outlet, &node.Nodes[i])
 			} else {
-				f, err = generateFlow(f, &child)
+				f, err = generateFlow(f, &node.Nodes[i])
 			}
 			if err != nil {
 				return nil, err
@@ -70,8 +80,8 @@ func generateFlow(outlet streams.Source, node *model.Node) (streams.Flow, error)
 		return f, nil
 	case model.Ensemble:
 		fanOut := flow.FanOut(outlet, len(node.Nodes))
-		for i, child := range node.Nodes {
-			f, err := generateFlow(fanOut[i], &child)
+		for i := range node.Nodes {
+			f, err := generateFlow(fanOut[i], &node.Nodes[i])
 			if err != nil {
 				return nil, err
 			}
@@ -81,11 +91,16 @@ func generateFlow(outlet streams.Source, node *model.Node) (streams.Flow, error)
 		return flow.ZipWith(flow.MergeFunctionFromSpec(spec), fanOut...), nil
 	case model.Switch:
 		var conditions []jp.Expr
-		for _, child := range node.Nodes {
-			x := child.ConditionExpression()
+		for i := range node.Nodes {
+			x := node.Nodes[i].ConditionExpression()
 			conditions = append(conditions, x)
 		}
 		splitFlows := flow.SplitMulti(outlet, len(node.Nodes), func(in any) int {
+			// Error events bypass condition evaluation so they propagate to the
+			// default branch and on to the graph-level ErrorFilter unchanged.
+			if ev, ok := in.(streams.Event); ok && ev.GetStatus() >= 400 {
+				return len(conditions) - 1
+			}
 			for i, condition := range conditions {
 				res, err := util.EvaluateJSONPathOnExpr(in, condition)
 				if err != nil {
@@ -98,8 +113,8 @@ func generateFlow(outlet streams.Source, node *model.Node) (streams.Flow, error)
 			// default to last flow if no condition matches
 			return len(conditions) - 1
 		})
-		for i, child := range node.Nodes {
-			f, err := generateFlow(splitFlows[i], &child)
+		for i := range node.Nodes {
+			f, err := generateFlow(splitFlows[i], &node.Nodes[i])
 			if err != nil {
 				return nil, err
 			}
@@ -111,7 +126,7 @@ func generateFlow(outlet streams.Source, node *model.Node) (streams.Flow, error)
 		if err != nil {
 			return nil, fmt.Errorf("unknown node kind %q: %w", node.Config.Kind, err)
 		}
-		nodeFlow, err := converter.(nodes.Converter).Convert(node.Config)
+		nodeFlow, err := converter.(nodes.Converter).Convert(&node.Config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create node %q: %w", node.Config.Kind, err)
 		}
@@ -148,6 +163,33 @@ func startHealthServer() {
 func (a *App) Run() error {
 	go startHealthServer()
 
+	// Initialise the error fan-in channel and resolve (or create) the error sink.
+	a.errorCh = make(chan any, 64)
+	var errSink streams.Sink
+	if a.graph.Error != nil {
+		c, err := sinks.RegistrySingleton.Get(a.graph.Error.Kind)
+		if err != nil {
+			return fmt.Errorf("failed to get error sink converter for kind %s: %w", a.graph.Error.Kind, err)
+		}
+		errSink, err = c.(sinks.Converter).Convert(*a.graph.Error)
+		if err != nil {
+			return fmt.Errorf("failed to create error sink %s: %w", a.graph.Error.Kind, err)
+		}
+	} else {
+		errSink = errorlog.NewLogSink()
+	}
+	// Forward error events from the fan-in channel to the error sink.
+	// errDone is closed once the error sink has flushed all events.
+	errDone := make(chan struct{})
+	go func() {
+		defer close(errDone)
+		for e := range a.errorCh {
+			errSink.In() <- e
+		}
+		close(errSink.In())
+		errSink.AwaitCompletion()
+	}()
+
 	converter, err := sources.RegistrySingleton.Get(a.graph.Input.Kind)
 	if err != nil {
 		return fmt.Errorf("failed to get source converter for kind %s: %w", a.graph.Input.Kind, err)
@@ -158,14 +200,22 @@ func (a *App) Run() error {
 	}
 
 	if a.graph.Output != nil {
-		converter, _ = sinks.RegistrySingleton.Get(a.graph.Output.Kind)
-		sink, err := converter.(sinks.Converter).Convert(*a.graph.Output)
+		outConverter, err := sinks.RegistrySingleton.Get(a.graph.Output.Kind)
+		if err != nil {
+			return fmt.Errorf("failed to get output sink converter for kind %s: %w", a.graph.Output.Kind, err)
+		}
+		sink, err := outConverter.(sinks.Converter).Convert(*a.graph.Output)
 		if err != nil {
 			return err
 		}
 		source.StartAsync(a, sink)
 	} else {
+		// Synchronous source: Start blocks until the source finishes.
+		// Close the error fan-in channel afterwards so the forwarding goroutine
+		// exits and the error sink flushes any remaining events.
 		source.Start(a)
+		close(a.errorCh)
+		<-errDone
 	}
 
 	return nil
@@ -173,6 +223,13 @@ func (a *App) Run() error {
 
 // Enhanced validateGraph to validate nodes recursively
 func validateGraph(graph *model.Graph) error {
+	// Guard against missing required fields to avoid nil-pointer panics.
+	if graph.Input == nil {
+		return fmt.Errorf("graph is missing required 'input' field")
+	}
+	if graph.Flow == nil {
+		return fmt.Errorf("graph is missing required 'flow' field")
+	}
 	// validate input
 	inputValidator, err := sources.RegistrySingleton.Get(graph.Input.Kind)
 	if err != nil {
@@ -197,6 +254,18 @@ func validateGraph(graph *model.Graph) error {
 			return fmt.Errorf("output kind %s does not support validation", graph.Output.Kind)
 		}
 	}
+	// validate error_sink (optional)
+	if graph.Error != nil {
+		errSinkValidator, err := sinks.RegistrySingleton.Get(graph.Error.Kind)
+		if err != nil {
+			return fmt.Errorf("unknown error sink kind %q: %w", graph.Error.Kind, err)
+		}
+		if validator, ok := errSinkValidator.(sinks.Validator); ok {
+			if err = validator.Validate(*graph.Error); err != nil {
+				return fmt.Errorf("invalid error_sink configuration: %w", err)
+			}
+		}
+	}
 	return validateNode(graph.Flow)
 }
 
@@ -210,8 +279,8 @@ func validateNode(node *model.Node) error {
 		if len(node.Nodes) == 0 {
 			return fmt.Errorf("%s node must have child nodes", node.Type)
 		}
-		for _, child := range node.Nodes {
-			if err := validateNode(&child); err != nil {
+		for i := range node.Nodes {
+			if err := validateNode(&node.Nodes[i]); err != nil {
 				return err
 			}
 		}
@@ -236,8 +305,8 @@ func validateNode(node *model.Node) error {
 				return fmt.Errorf("ensemble node with concat_template merge mode must have template in config spec")
 			}
 		}
-		for _, child := range node.Nodes {
-			if err := validateNode(&child); err != nil {
+		for i := range node.Nodes {
+			if err := validateNode(&node.Nodes[i]); err != nil {
 				return err
 			}
 		}
@@ -245,16 +314,16 @@ func validateNode(node *model.Node) error {
 		if len(node.Nodes) < 2 {
 			return fmt.Errorf("switch node must have at least two child nodes")
 		}
-		for _, child := range node.Nodes {
-			if child.Condition != "" {
-				child.Condition = util.NormalizeJSONPath(child.Condition)
-				if err := util.ValidateJSONPath(child.Condition); err != nil {
+		for i := range node.Nodes {
+			if node.Nodes[i].Condition != "" {
+				node.Nodes[i].Condition = util.NormalizeJSONPath(node.Nodes[i].Condition)
+				if err := util.ValidateJSONPath(node.Nodes[i].Condition); err != nil {
 					return fmt.Errorf("invalid JSONPath condition in switch node: %s", err.Error())
 				}
 			}
 		}
-		for _, child := range node.Nodes {
-			if err := validateNode(&child); err != nil {
+		for i := range node.Nodes {
+			if err := validateNode(&node.Nodes[i]); err != nil {
 				return err
 			}
 		}
@@ -264,13 +333,13 @@ func validateNode(node *model.Node) error {
 		if err != nil {
 			return err
 		}
-		err = nodeValidator.(nodes.Validator).Validate(node.Config)
+		err = nodeValidator.(nodes.Validator).Validate(&node.Config)
 		if err != nil {
 			return err
 		}
 
-		for _, child := range node.Nodes {
-			if err := validateNode(&child); err != nil {
+		for i := range node.Nodes {
+			if err := validateNode(&node.Nodes[i]); err != nil {
 				return err
 			}
 		}

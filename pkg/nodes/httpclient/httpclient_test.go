@@ -70,12 +70,12 @@ func TestHTTPProcessorValidate(t *testing.T) {
 	proc := &HTTPProcessor{}
 	// missing URL
 	spec := model.NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": ""}}
-	if err := proc.Validate(spec); err == nil {
+	if err := proc.Validate(&spec); err == nil {
 		t.Fatalf("expected validation error for missing url")
 	}
 	// invalid method
 	spec = model.NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://example", "method": "INVALID"}}
-	if err := proc.Validate(spec); err == nil {
+	if err := proc.Validate(&spec); err == nil {
 		t.Fatalf("expected validation error for invalid method")
 	}
 	// negative num_instances - since numInstances is unexported, can't validate
@@ -85,7 +85,7 @@ func TestHTTPProcessorValidate(t *testing.T) {
 	// }
 	// valid
 	spec = model.NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://example", "method": "GET", "num_instances": 2}}
-	if err := proc.Validate(spec); err != nil {
+	if err := proc.Validate(&spec); err != nil {
 		t.Fatalf("expected no error for valid spec, got %v", err)
 	}
 }
@@ -104,7 +104,7 @@ func TestHTTPProcessorConvert(t *testing.T) {
 		},
 	}
 
-	flow, err := proc.Convert(spec)
+	flow, err := proc.Convert(&spec)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
