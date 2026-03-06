@@ -34,7 +34,10 @@ func TestWebSocketClient_ReceiveAndForward(t *testing.T) {
 
 	wsURL := "ws" + srv.URL[len("http"):]
 	conf := NewConfiguration(wsURL, nil, nil, ws.TextMessage)
-	client := NewWebSocketClient(*conf)
+	client, err := NewWebSocketClient(*conf)
+	if err != nil {
+		t.Fatalf("NewWebSocketClient error: %v", err)
+	}
 
 	// read from client.Out channel with timeout
 	select {
@@ -136,7 +139,10 @@ func TestWebSocketClient_Via(t *testing.T) {
 	wsURL := "ws" + srv.URL[len("http"):]
 
 	conf := NewConfiguration(wsURL, nil, nil, ws.TextMessage)
-	wsc := NewWebSocketClient(*conf)
+	wsc, err := NewWebSocketClient(*conf)
+	if err != nil {
+		t.Fatalf("NewWebSocketClient error: %v", err)
+	}
 
 	// Mock flow
 	mockFlow := &mockFlow{in: make(chan any, 1)}

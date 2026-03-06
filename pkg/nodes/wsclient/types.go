@@ -18,6 +18,12 @@ type Configuration struct {
 	Headers        map[string]string // check
 	InputTemplate  string            `json:"input_template,omitempty"`
 	OutputTemplate string            `json:"output_template,omitempty"`
+	// MaxRetries is the number of reconnection attempts after a connection
+	// failure. 0 = no reconnect (default), -1 = unlimited reconnects.
+	MaxRetries int `json:"max_retries,omitempty"`
+	// RetryBackoffMs is the initial backoff in milliseconds between reconnection
+	// attempts. Doubles each attempt, capped at 30 s. Defaults to 1000 ms.
+	RetryBackoffMs int `json:"retry_backoff_ms,omitempty"`
 	inTemplateObj  *template.Template
 	outTemplateObj *template.Template
 }

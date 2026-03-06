@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"testing"
@@ -90,6 +91,7 @@ func createMockClient(t *testing.T, lis *bufconn.Listener, conf Configuration) *
 		out:    make(chan any),
 		client: client,
 		conn:   conn,
+		logger: slog.Default(),
 	}
 
 	// Start processing stream

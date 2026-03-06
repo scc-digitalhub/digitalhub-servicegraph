@@ -7,7 +7,9 @@ package httpclient
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -34,6 +36,7 @@ type HttpClient struct {
 	in         chan any
 	out        chan any
 	httpClient http.Client
+	logger     *slog.Logger
 }
 
 // Verify HttpClient satisfies the Flow interface.
@@ -53,6 +56,11 @@ func NewHttpClient(conf Configuration) *HttpClient {
 		in:         make(chan any),
 		out:        make(chan any),
 		httpClient: *createClient(),
+		logger: slog.Default().With(
+			slog.Group("node",
+				slog.String("type", "http"),
+				slog.String("url", conf.URL),
+			)),
 	}
 
 	// start processing stream elements
@@ -101,7 +109,18 @@ func (hc *HttpClient) stream() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					hc.logger.Error("Worker panic recovered", slog.Any("panic", r))
+				}
+			}()
 			for element := range hc.in {
+				// Pass error events through without making an HTTP call.
+				if ev, ok := element.(streams.Event); ok && ev.GetStatus() >= 400 {
+					hc.logger.Debug("Passing through error event", slog.Int("status", ev.GetStatus()))
+					hc.out <- element
+					continue
+				}
 				ctx := streams.ExtractContext(element)
 				hc.out <- hc.call(streams.NewEventFrom(ctx, element))
 			}
@@ -140,24 +159,60 @@ func (hc *HttpClient) call(msg streams.Event) streams.Event {
 		util.AddRequestToSpan(childCtx, body, req.GetContentType())
 	}
 
-	// create http request
-	httpReq, err := http.NewRequestWithContext(rootContext, strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
-
-	if err != nil {
-		return streams.NewErrorEvent(rootContext, err, 500)
+	// Determine which status codes should be retried.
+	retryOn := hc.conf.RetryOn
+	if retryOn == nil {
+		retryOn = []int{500, 502, 503, 504}
 	}
-	if req.GetHeaders() != nil {
-		for header, value := range req.GetHeaders() {
-			httpReq.Header.Set(header, value)
+	backoff := time.Duration(hc.conf.RetryBackoffMs) * time.Millisecond
+	if backoff <= 0 {
+		backoff = 100 * time.Millisecond
+	}
+
+	var resp *http.Response
+	var lastErr error
+	for attempt := 1; attempt <= hc.conf.MaxRetries+1; attempt++ {
+		if bodyReader != nil {
+			// Reset body position so each attempt reads the full body.
+			_, _ = bodyReader.Seek(0, io.SeekStart)
+		}
+		// Create a fresh request for each attempt (bodies cannot be replayed).
+		httpReq2, err2 := http.NewRequestWithContext(rootContext, strings.ToUpper(req.GetMethod()), req.GetURL(), bodyReader)
+		if err2 != nil {
+			return streams.NewErrorEvent(rootContext, err2, 500)
+		}
+		if req.GetHeaders() != nil {
+			for header, value := range req.GetHeaders() {
+				httpReq2.Header.Set(header, value)
+			}
+		}
+		resp, lastErr = hc.httpClient.Do(httpReq2)
+		if lastErr != nil {
+			if resp != nil {
+				resp.Body.Close()
+				resp = nil
+			}
+		} else if slices.Contains(retryOn, resp.StatusCode) {
+			// Consume and close the body before retry.
+			_, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("retryable status code: %d", resp.StatusCode)
+			resp = nil
+		} else {
+			break
+		}
+		if attempt <= hc.conf.MaxRetries {
+			hc.logger.Warn("HTTP call failed, retrying",
+				slog.String("url", req.GetURL()),
+				slog.Int("attempt", attempt),
+				slog.Duration("backoff", backoff),
+				slog.Any("error", lastErr))
+			time.Sleep(backoff)
+			backoff = min(backoff*2, 10*time.Second)
 		}
 	}
-	// make http call
-	resp, err := hc.httpClient.Do(httpReq)
-
-	if err != nil && resp != nil {
-		return streams.NewErrorEvent(rootContext, err, resp.StatusCode)
-	} else if err != nil {
-		return streams.NewErrorEvent(rootContext, err, 500)
+	if lastErr != nil {
+		return streams.NewErrorEvent(rootContext, lastErr, 500)
 	}
 	defer resp.Body.Close()
 

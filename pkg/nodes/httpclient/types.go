@@ -24,6 +24,15 @@ type Configuration struct {
 	NumInstances   int               `json:"num_instances,omitempty"`
 	InputTemplate  string            `json:"input_template,omitempty"`
 	OutputTemplate string            `json:"output_template,omitempty"`
+	// RetryOn is a list of HTTP status codes that trigger a retry.
+	// Defaults to [500, 502, 503, 504] when nil.
+	RetryOn []int `json:"retry_on,omitempty"`
+	// MaxRetries is the number of retries on a failed or retryable response.
+	// 0 = no retries.
+	MaxRetries int `json:"max_retries,omitempty"`
+	// RetryBackoffMs is the initial backoff in milliseconds between retries.
+	// Doubles each attempt, capped at 10 s. Defaults to 100 ms.
+	RetryBackoffMs int `json:"retry_backoff_ms,omitempty"`
 	inTemplateObj  *template.Template
 	outTemplateObj *template.Template
 }

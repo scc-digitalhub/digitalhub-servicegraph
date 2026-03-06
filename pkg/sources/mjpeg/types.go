@@ -21,6 +21,13 @@ type Configuration struct {
 	URL           string `json:"url"`
 	FrameInterval int    `json:"frame_interval,omitempty"` // Process every Nth frame (1 = all frames, 2 = every 2nd frame, etc.)
 	ReadTimeout   int    `json:"read_timeout,omitempty"`   // Read timeout in seconds
+	// MaxRetries is the number of reconnection attempts on stream failure.
+	// 0 = unlimited retries (default), negative values are not used.
+	MaxRetries int `json:"max_retries,omitempty"`
+	// RetryBackoffMs is the initial backoff duration in milliseconds between
+	// reconnection attempts. Doubles on each attempt, capped at 30 s.
+	// Defaults to 1000 ms when 0.
+	RetryBackoffMs int `json:"retry_backoff_ms,omitempty"`
 }
 
 // MJPEGEvent represents a single JPEG frame from the MJPEG stream

@@ -32,6 +32,12 @@ type Configuration struct {
 	Timeout int `json:"timeout,omitempty"`
 	// Protocol to use: "grpc" or "rest". Defaults to "grpc" if empty.
 	Protocol string `json:"protocol,omitempty"`
+	// MaxRetries is the number of retries on transient inference errors.
+	// 0 = no retries.
+	MaxRetries int `json:"max_retries,omitempty"`
+	// RetryBackoffMs is the initial backoff in milliseconds between retries.
+	// Doubles each attempt, capped at 5 s. Defaults to 100 ms.
+	RetryBackoffMs int `json:"retry_backoff_ms,omitempty"`
 
 	InputTemplates []InputTemplateSpec `json:"input_templates,omitempty"`
 	OutputTemplate string              `json:"output_template,omitempty"`

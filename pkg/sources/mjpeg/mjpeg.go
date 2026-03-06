@@ -6,6 +6,7 @@ package mjpeg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources"
@@ -44,12 +46,15 @@ func NewMJPEGSource(conf *Configuration) *MJPEGSource {
 	return source
 }
 
-// StartAsync begins processing the MJPEG stream asynchronously
+// StartAsync begins processing the MJPEG stream asynchronously.
+// On connection failure the source reconnects with exponential backoff.
+// Set MaxRetries in Configuration to control the number of reconnect attempts
+// (0 = unlimited, positive N = at most N reconnects).
 func (s *MJPEGSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) error {
 	s.factory = factory
 	s.input = make(chan any)
 
-	// Start the flow
+	// Start the downstream flow in a separate goroutine.
 	go func() {
 		factory.GenerateFlow(
 			extension.NewChanSource(s.input),
@@ -57,20 +62,61 @@ func (s *MJPEGSource) StartAsync(factory sources.FlowFactory, sink streams.Sink)
 		)
 	}()
 
-	// Start streaming
-	ctx := context.Background()
+	// ctx is cancelled on SIGTERM/SIGINT to stop the reconnect loop cleanly.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Reconnect loop: keeps the MJPEG stream alive across transient failures.
 	go func() {
-		if err := s.streamFrames(ctx, s.input); err != nil {
-			s.logger.Error("Error streaming MJPEG", slog.Any("error", err))
+		defer close(s.input)
+		defer cancel()
+
+		initialBackoff := time.Duration(s.Conf.RetryBackoffMs) * time.Millisecond
+		if initialBackoff <= 0 {
+			initialBackoff = time.Second
+		}
+		backoff := initialBackoff
+		maxRetries := s.Conf.MaxRetries // 0 = unlimited
+		attempt := 0
+
+		for {
+			if err := s.streamFrames(ctx, s.input); err != nil {
+				if errors.Is(err, context.Canceled) {
+					s.logger.Info("Stream cancelled, shutting down")
+					return
+				}
+				// maxRetries > 0: limited; == 0: unlimited
+				if maxRetries > 0 && attempt >= maxRetries {
+					s.logger.Error("Max reconnect attempts exceeded, giving up",
+						slog.Int("attempts", attempt),
+						slog.Any("error", err))
+					return
+				}
+				attempt++
+				s.logger.Warn("MJPEG stream error, reconnecting",
+					slog.Any("error", err),
+					slog.Int("attempt", attempt),
+					slog.Duration("backoff", backoff),
+				)
+				select {
+				case <-time.After(backoff):
+				case <-ctx.Done():
+					return
+				}
+				backoff = min(backoff*2, 30*time.Second)
+			} else {
+				// Clean EOF — stream ended normally.
+				s.logger.Info("MJPEG stream ended cleanly")
+				return
+			}
 		}
 	}()
 
-	// Keep running until interrupted
+	// Block until the process receives an interrupt or termination signal.
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 	<-shutdown
+	cancel()
 
-	close(s.input)
 	return nil
 }
 

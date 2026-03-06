@@ -42,30 +42,43 @@ func NewApp(graph model.Graph) (*App, error) {
 }
 
 func (a *App) GenerateFlow(source streams.Source, sink streams.Sink) {
-	flow := generateFlow(source, a.graph.Flow)
-	flow.To(sink)
+	f, err := generateFlow(source, a.graph.Flow)
+	if err != nil {
+		// generateFlow is called from inside a running source goroutine via the
+		// FlowFactory interface (which cannot return an error). Log and panic so
+		// the error is visible rather than producing a silent nil-pointer crash.
+		panic(fmt.Sprintf("failed to build processing flow: %v", err))
+	}
+	f.To(sink)
 }
 
-func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
+func generateFlow(outlet streams.Source, node *model.Node) (streams.Flow, error) {
 	switch node.Type {
 	case model.Sequence:
-		var flow streams.Flow = nil
+		var f streams.Flow
 		for _, child := range node.Nodes {
-			if flow == nil {
-				flow = generateFlow(outlet, &child)
+			var err error
+			if f == nil {
+				f, err = generateFlow(outlet, &child)
 			} else {
-				flow = generateFlow(flow, &child)
+				f, err = generateFlow(f, &child)
+			}
+			if err != nil {
+				return nil, err
 			}
 		}
-		return flow
+		return f, nil
 	case model.Ensemble:
 		fanOut := flow.FanOut(outlet, len(node.Nodes))
-
 		for i, child := range node.Nodes {
-			fanOut[i] = generateFlow(fanOut[i], &child)
+			f, err := generateFlow(fanOut[i], &child)
+			if err != nil {
+				return nil, err
+			}
+			fanOut[i] = f
 		}
 		spec := node.Config.Spec
-		return flow.ZipWith(flow.MergeFunctionFromSpec(spec), fanOut...)
+		return flow.ZipWith(flow.MergeFunctionFromSpec(spec), fanOut...), nil
 	case model.Switch:
 		var conditions []jp.Expr
 		for _, child := range node.Nodes {
@@ -85,17 +98,26 @@ func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 			// default to last flow if no condition matches
 			return len(conditions) - 1
 		})
-
 		for i, child := range node.Nodes {
-			splitFlows[i] = generateFlow(splitFlows[i], &child)
+			f, err := generateFlow(splitFlows[i], &child)
+			if err != nil {
+				return nil, err
+			}
+			splitFlows[i] = f
 		}
-		return flow.Merge(splitFlows...)
+		return flow.Merge(splitFlows...), nil
 	case model.Service:
-		converter, _ := nodes.RegistrySingleton.Get(node.Config.Kind)
-		flow, _ := converter.(nodes.Converter).Convert(node.Config)
-		return outlet.Via(flow)
+		converter, err := nodes.RegistrySingleton.Get(node.Config.Kind)
+		if err != nil {
+			return nil, fmt.Errorf("unknown node kind %q: %w", node.Config.Kind, err)
+		}
+		nodeFlow, err := converter.(nodes.Converter).Convert(node.Config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create node %q: %w", node.Config.Kind, err)
+		}
+		return outlet.Via(nodeFlow), nil
 	}
-	return nil
+	return nil, fmt.Errorf("unsupported node type: %s", node.Type)
 }
 
 // startHealthServer starts a lightweight HTTP server that exposes GET /health.

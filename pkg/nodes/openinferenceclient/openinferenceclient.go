@@ -24,7 +24,9 @@ import (
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/util"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/proto/inference/v2"
 )
@@ -127,6 +129,15 @@ func (oic *OpenInferenceClient) In() chan<- any {
 	return oic.in
 }
 
+// getLogger returns the instance logger, falling back to slog.Default() if not initialised.
+// This allows struct literals created in tests to work without setting the logger field.
+func (oic *OpenInferenceClient) getLogger() *slog.Logger {
+	if oic.logger == nil {
+		return slog.Default()
+	}
+	return oic.logger
+}
+
 // Close closes the gRPC connection
 func (oic *OpenInferenceClient) Close() error {
 	if oic.conn != nil {
@@ -145,26 +156,39 @@ func (oic *OpenInferenceClient) transmit(inlet streams.Inlet) {
 // stream processes elements from input channel
 func (oic *OpenInferenceClient) stream() {
 	var wg sync.WaitGroup
-	oic.logger.Debug("Starting stream workers", slog.Int("num_instances", oic.conf.NumInstances))
+	oic.getLogger().Debug("Starting stream workers", slog.Int("num_instances", oic.conf.NumInstances))
 	// Create a pool of worker goroutines
 	for i := 0; i < oic.conf.NumInstances; i++ {
 		wg.Add(1)
 		workerID := i
 		go func() {
 			defer wg.Done()
-			oic.logger.Debug("Worker started", slog.Int("worker_id", workerID))
+			defer func() {
+				if r := recover(); r != nil {
+					oic.getLogger().Error("Worker panic recovered", slog.Any("panic", r))
+				}
+			}()
+			oic.getLogger().Debug("Worker started", slog.Int("worker_id", workerID))
 			for element := range oic.in {
-				oic.logger.Debug("Received element for inference", slog.String("model", oic.conf.ModelName), slog.Int("worker_id", workerID))
+				// Pass error events through without invoking inference.
+				if ev, ok := element.(streams.Event); ok && ev.GetStatus() >= 400 {
+					oic.getLogger().Debug("Passing through error event",
+						slog.Int("status", ev.GetStatus()),
+						slog.Int("worker_id", workerID))
+					oic.out <- element
+					continue
+				}
+				oic.getLogger().Debug("Received element for inference", slog.String("model", oic.conf.ModelName), slog.Int("worker_id", workerID))
 				ctx := streams.ExtractContext(element)
 				oic.out <- oic.infer(streams.NewEventFrom(ctx, element))
 			}
-			oic.logger.Debug("Worker stopped", slog.Int("worker_id", workerID))
+			oic.getLogger().Debug("Worker stopped", slog.Int("worker_id", workerID))
 		}()
 	}
 
 	// Wait for worker goroutines to finish
 	wg.Wait()
-	oic.logger.Debug("All workers finished, closing output channel")
+	oic.getLogger().Debug("All workers finished, closing output channel")
 	// Close the output channel
 	close(oic.out)
 	// Close gRPC connection
@@ -202,32 +226,66 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 		}
 		url := strings.TrimRight(address, "/") + fmt.Sprintf("/v2/models/%s/infer", oic.conf.ModelName)
 
-		oic.logger.Debug("Sending REST inference request",
+		oic.getLogger().Debug("Sending REST inference request",
 			slog.String("url", url),
 			slog.Int("request_body_bytes", len(reqJSON)),
 		)
 
-		// HTTP POST
+		// HTTP POST with retry for transient/server errors.
+		restBackoff := time.Duration(oic.conf.RetryBackoffMs) * time.Millisecond
+		if restBackoff <= 0 {
+			restBackoff = 100 * time.Millisecond
+		}
 		httpClient := &http.Client{Timeout: time.Duration(oic.conf.Timeout) * time.Second}
-		resp, err := httpClient.Post(url, "application/json", bytes.NewReader(reqJSON))
-		if err != nil {
-			return streams.NewErrorEvent(rootContext, fmt.Errorf("rest inference failed: %w", err), 500)
+		var body []byte
+		var restErr error
+		for attempt := 1; attempt <= oic.conf.MaxRetries+1; attempt++ {
+			var resp *http.Response
+			resp, restErr = httpClient.Post(url, "application/json", bytes.NewReader(reqJSON))
+			if restErr != nil {
+				if attempt <= oic.conf.MaxRetries {
+					oic.getLogger().Warn("REST inference request failed, retrying",
+						slog.Int("attempt", attempt),
+						slog.Duration("backoff", restBackoff),
+						slog.Any("error", restErr))
+					time.Sleep(restBackoff)
+					restBackoff = min(restBackoff*2, 5*time.Second)
+				}
+				continue
+			}
+			oic.getLogger().Debug("Received REST inference response", slog.Int("status_code", resp.StatusCode))
+			if resp.StatusCode >= 500 {
+				b, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				restErr = fmt.Errorf("rest inference returned status %d: %s", resp.StatusCode, string(b))
+				if attempt <= oic.conf.MaxRetries {
+					oic.getLogger().Warn("REST inference server error, retrying",
+						slog.Int("attempt", attempt),
+						slog.Duration("backoff", restBackoff),
+						slog.Any("error", restErr))
+					time.Sleep(restBackoff)
+					restBackoff = min(restBackoff*2, 5*time.Second)
+				}
+				continue
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				b, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				return streams.NewErrorEvent(rootContext, fmt.Errorf("rest inference returned status %d: %s", resp.StatusCode, string(b)), 500)
+			}
+			body, restErr = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if restErr != nil {
+				return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to read rest response: %w", restErr), 500)
+			}
+			restErr = nil
+			break
 		}
-		defer resp.Body.Close()
-
-		oic.logger.Debug("Received REST inference response", slog.Int("status_code", resp.StatusCode))
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			b, _ := io.ReadAll(resp.Body)
-			return streams.NewErrorEvent(rootContext, fmt.Errorf("rest inference returned status %d: %s", resp.StatusCode, string(b)), 500)
+		if restErr != nil {
+			return streams.NewErrorEvent(rootContext, restErr, 500)
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to read rest response: %w", err), 500)
-		}
-
-		oic.logger.Debug("Read REST response body", slog.Int("body_bytes", len(body)))
+		oic.getLogger().Debug("Read REST response body", slog.Int("body_bytes", len(body)))
 
 		// Unmarshal into REST response model
 		var restResp RESTInferResponse
@@ -235,7 +293,7 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to unmarshal rest response: %w", err), 500)
 		}
 
-		oic.logger.Debug("Unmarshalled REST response",
+		oic.getLogger().Debug("Unmarshalled REST response",
 			slog.String("model_name", restResp.ModelName),
 			slog.Int("output_count", len(restResp.Outputs)),
 		)
@@ -255,30 +313,50 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 	_, span := tr.Start(rootContext, "OpenInference gRPC Client Node")
 	defer span.End()
 
-	// Set timeout context
-	timeout := time.Duration(oic.conf.Timeout) * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
 	// Build inference request from input
 	request, err := oic.buildInferRequest(msg)
 	if err != nil {
 		return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to build request: %w", err), 500)
 	}
 
-	oic.logger.Debug("Sending gRPC inference request",
+	oic.getLogger().Debug("Sending gRPC inference request",
 		slog.String("model_name", request.ModelName),
 		slog.String("model_version", request.ModelVersion),
 		slog.Int("input_count", len(request.Inputs)),
 	)
 
-	// Perform inference
-	response, err := oic.client.ModelInfer(ctx, request)
-	if err != nil {
-		return streams.NewErrorEvent(rootContext, fmt.Errorf("inference failed: %w", err), 500)
+	// gRPC inference with retry on transient errors.
+	timeout := time.Duration(oic.conf.Timeout) * time.Second
+	grpcBackoff := time.Duration(oic.conf.RetryBackoffMs) * time.Millisecond
+	if grpcBackoff <= 0 {
+		grpcBackoff = 100 * time.Millisecond
+	}
+	var response *pb.ModelInferResponse
+	var lastErr error
+	for attempt := 1; attempt <= oic.conf.MaxRetries+1; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		response, lastErr = oic.client.ModelInfer(ctx, request)
+		cancel()
+		if lastErr == nil {
+			break
+		}
+		if !isRetryableGRPCError(lastErr) {
+			break
+		}
+		if attempt <= oic.conf.MaxRetries {
+			oic.getLogger().Warn("gRPC inference failed, retrying",
+				slog.Int("attempt", attempt),
+				slog.Duration("backoff", grpcBackoff),
+				slog.Any("error", lastErr))
+			time.Sleep(grpcBackoff)
+			grpcBackoff = min(grpcBackoff*2, 5*time.Second)
+		}
+	}
+	if lastErr != nil {
+		return streams.NewErrorEvent(rootContext, fmt.Errorf("inference failed: %w", lastErr), 500)
 	}
 
-	oic.logger.Debug("Received gRPC inference response",
+	oic.getLogger().Debug("Received gRPC inference response",
 		slog.String("model_name", response.ModelName),
 		slog.Int("output_count", len(response.Outputs)),
 	)
@@ -294,7 +372,7 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 
 // buildInferRequest builds a ModelInferRequest from the input event
 func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelInferRequest, error) {
-	oic.logger.Debug("Building inference request",
+	oic.getLogger().Debug("Building inference request",
 		slog.Int("input_tensor_count", len(oic.conf.InputTensorSpec)),
 		slog.Bool("has_templates", len(oic.conf.inputTemplateObjMap) > 0),
 	)
@@ -307,13 +385,13 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 			if oic.conf.inputTemplateObjMap[tensorSpec.Name] != nil {
 				// data is a json representation of the input tensors, generated by applying the template to the input event
 				strBody := string(msg.GetBody())
-				oic.logger.Debug("Applying input template",
+				oic.getLogger().Debug("Applying input template",
 					slog.String("tensor_name", tensorSpec.Name),
 					slog.String("template", strBody),
 				)
 				data, err := util.ConvertBody(msg.GetBody(), oic.conf.inputTemplateObjMap[tensorSpec.Name])
 				strData := string(data)
-				oic.logger.Debug("Processed input template",
+				oic.getLogger().Debug("Processed input template",
 					slog.String("tensor_name", tensorSpec.Name),
 					slog.String("processed_data", strData),
 				)
@@ -324,7 +402,7 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert tensor data for '%s': %w", tensorSpec.Name, err)
 				}
-				oic.logger.Debug("Processed tensor via template",
+				oic.getLogger().Debug("Processed tensor via template",
 					slog.String("tensor_name", tensorSpec.Name),
 					slog.String("datatype", tensorSpec.DataType),
 					slog.Int64("element_count", length),
@@ -342,7 +420,7 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 		// compute element count
 		elemCount := computeElementCount(oic.conf.InputTensorSpec[0].DataType, len(raw))
 		mapLen[name] = elemCount
-		oic.logger.Debug("Using raw body as tensor input",
+		oic.getLogger().Debug("Using raw body as tensor input",
 			slog.String("tensor_name", name),
 			slog.String("datatype", oic.conf.InputTensorSpec[0].DataType),
 			slog.Int("raw_bytes", len(raw)),
@@ -666,7 +744,7 @@ func convertToInterfaceSlice(v any) []interface{} {
 
 // processResponse processes the inference response
 func (oic *OpenInferenceClient) processResponse(ctx context.Context, response *pb.ModelInferResponse) (streams.Event, error) {
-	oic.logger.Debug("Processing inference response",
+	oic.getLogger().Debug("Processing inference response",
 		slog.String("model_name", response.ModelName),
 		slog.String("model_version", response.ModelVersion),
 		slog.Int("output_count", len(response.Outputs)),
@@ -713,12 +791,12 @@ func (oic *OpenInferenceClient) processResponse(ctx context.Context, response *p
 	// Apply output template if specified
 	var finalData []byte
 	if oic.conf.outputTemplateObj != nil {
-		oic.logger.Debug("Applying output template", slog.Int("response_json_bytes", len(responseJSON)))
+		oic.getLogger().Debug("Applying output template", slog.Int("response_json_bytes", len(responseJSON)))
 		finalData, err = util.ConvertBody(responseJSON, oic.conf.outputTemplateObj)
 		if err != nil {
 			return nil, fmt.Errorf("failed to process output template: %w", err)
 		}
-		oic.logger.Debug("Output template applied", slog.Int("final_data_bytes", len(finalData)))
+		oic.getLogger().Debug("Output template applied", slog.Int("final_data_bytes", len(finalData)))
 	} else {
 		finalData = responseJSON
 	}
@@ -761,6 +839,18 @@ func (oic *OpenInferenceClient) extractTensorData(datatype string, contents *pb.
 	default:
 		return nil
 	}
+}
+
+// isRetryableGRPCError returns true for transient gRPC error codes that are
+// safe to retry (Unavailable, DeadlineExceeded, ResourceExhausted).
+func isRetryableGRPCError(err error) bool {
+	if err == nil {
+		return false
+	}
+	code := status.Code(err)
+	return code == codes.Unavailable ||
+		code == codes.DeadlineExceeded ||
+		code == codes.ResourceExhausted
 }
 
 // createGRPCConnection creates a gRPC connection with the specified configuration
