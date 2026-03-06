@@ -86,9 +86,9 @@ def handler(context, event):
         init_model(context)
     
     vqa_model = context.model
-    # context.logger.info(f"request {request.inputs[0]}")
     image_bytes = request.inputs[0].data
-    
+
+    caption = ""
     try:
         # Convert bytes to PIL Image
         image_bytes_clean = bytes(image_bytes)
@@ -102,10 +102,10 @@ def handler(context, event):
         else:
             caption = vqa_model.generate_caption(image)
         
-        print(f"Generated caption: {caption}")
+        context.logger.info(f"Generated caption: {caption}")
         
     except Exception as e:
-        print(f"Error processing image: {e}")
+        context.logger.error(f"Error processing image: {e}")
         # caption = f"Error: {str(e)}"
     
 

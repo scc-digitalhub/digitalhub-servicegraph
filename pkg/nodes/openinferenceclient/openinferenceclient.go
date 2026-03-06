@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ type OpenInferenceClient struct {
 	out    chan any
 	client pb.GRPCInferenceServiceClient
 	conn   *grpc.ClientConn
+	logger *slog.Logger
 }
 
 // Verify OpenInferenceClient satisfies the Flow interface
@@ -47,6 +49,19 @@ func NewOpenInferenceClient(conf Configuration) (*OpenInferenceClient, error) {
 		conf.Protocol = "grpc"
 	}
 
+	logger := slog.Default().With(
+		slog.Group("node",
+			slog.String("type", "openinference"),
+			slog.String("protocol", conf.Protocol),
+			slog.String("model", conf.ModelName),
+			slog.String("address", conf.Address),
+		))
+
+	logger.Debug("Creating OpenInferenceClient",
+		slog.Int("num_instances", conf.NumInstances),
+		slog.Int("timeout", conf.Timeout),
+	)
+
 	proto := strings.ToLower(conf.Protocol)
 	if proto == "grpc" {
 		// Create gRPC connection
@@ -58,12 +73,15 @@ func NewOpenInferenceClient(conf Configuration) (*OpenInferenceClient, error) {
 		// Create gRPC client
 		client := pb.NewGRPCInferenceServiceClient(conn)
 
+		logger.Debug("gRPC connection established")
+
 		oic := &OpenInferenceClient{
 			conf:   conf,
 			in:     make(chan any),
 			out:    make(chan any),
 			client: client,
 			conn:   conn,
+			logger: logger,
 		}
 
 		// Start processing stream elements
@@ -73,10 +91,12 @@ func NewOpenInferenceClient(conf Configuration) (*OpenInferenceClient, error) {
 	}
 
 	if proto == "rest" {
+		logger.Debug("REST client initialized")
 		oic := &OpenInferenceClient{
-			conf: conf,
-			in:   make(chan any),
-			out:  make(chan any),
+			conf:   conf,
+			in:     make(chan any),
+			out:    make(chan any),
+			logger: logger,
 		}
 		go oic.stream()
 		return oic, nil
@@ -125,20 +145,26 @@ func (oic *OpenInferenceClient) transmit(inlet streams.Inlet) {
 // stream processes elements from input channel
 func (oic *OpenInferenceClient) stream() {
 	var wg sync.WaitGroup
+	oic.logger.Debug("Starting stream workers", slog.Int("num_instances", oic.conf.NumInstances))
 	// Create a pool of worker goroutines
 	for i := 0; i < oic.conf.NumInstances; i++ {
 		wg.Add(1)
+		workerID := i
 		go func() {
 			defer wg.Done()
+			oic.logger.Debug("Worker started", slog.Int("worker_id", workerID))
 			for element := range oic.in {
+				oic.logger.Debug("Received element for inference", slog.String("model", oic.conf.ModelName), slog.Int("worker_id", workerID))
 				ctx := streams.ExtractContext(element)
 				oic.out <- oic.infer(streams.NewEventFrom(ctx, element))
 			}
+			oic.logger.Debug("Worker stopped", slog.Int("worker_id", workerID))
 		}()
 	}
 
 	// Wait for worker goroutines to finish
 	wg.Wait()
+	oic.logger.Debug("All workers finished, closing output channel")
 	// Close the output channel
 	close(oic.out)
 	// Close gRPC connection
@@ -176,6 +202,11 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 		}
 		url := strings.TrimRight(address, "/") + fmt.Sprintf("/v2/models/%s/infer", oic.conf.ModelName)
 
+		oic.logger.Debug("Sending REST inference request",
+			slog.String("url", url),
+			slog.Int("request_body_bytes", len(reqJSON)),
+		)
+
 		// HTTP POST
 		httpClient := &http.Client{Timeout: time.Duration(oic.conf.Timeout) * time.Second}
 		resp, err := httpClient.Post(url, "application/json", bytes.NewReader(reqJSON))
@@ -183,6 +214,8 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 			return streams.NewErrorEvent(rootContext, fmt.Errorf("rest inference failed: %w", err), 500)
 		}
 		defer resp.Body.Close()
+
+		oic.logger.Debug("Received REST inference response", slog.Int("status_code", resp.StatusCode))
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			b, _ := io.ReadAll(resp.Body)
@@ -194,11 +227,18 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to read rest response: %w", err), 500)
 		}
 
+		oic.logger.Debug("Read REST response body", slog.Int("body_bytes", len(body)))
+
 		// Unmarshal into REST response model
 		var restResp RESTInferResponse
 		if err := json.Unmarshal(body, &restResp); err != nil {
 			return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to unmarshal rest response: %w", err), 500)
 		}
+
+		oic.logger.Debug("Unmarshalled REST response",
+			slog.String("model_name", restResp.ModelName),
+			slog.Int("output_count", len(restResp.Outputs)),
+		)
 
 		// Convert REST response to protobuf ModelInferResponse
 		response := convertRESTResponseToProto(&restResp)
@@ -226,11 +266,22 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 		return streams.NewErrorEvent(rootContext, fmt.Errorf("failed to build request: %w", err), 500)
 	}
 
+	oic.logger.Debug("Sending gRPC inference request",
+		slog.String("model_name", request.ModelName),
+		slog.String("model_version", request.ModelVersion),
+		slog.Int("input_count", len(request.Inputs)),
+	)
+
 	// Perform inference
 	response, err := oic.client.ModelInfer(ctx, request)
 	if err != nil {
 		return streams.NewErrorEvent(rootContext, fmt.Errorf("inference failed: %w", err), 500)
 	}
+
+	oic.logger.Debug("Received gRPC inference response",
+		slog.String("model_name", response.ModelName),
+		slog.Int("output_count", len(response.Outputs)),
+	)
 
 	// Process response
 	result, err := oic.processResponse(rootContext, response)
@@ -243,6 +294,10 @@ func (oic *OpenInferenceClient) infer(msg streams.Event) streams.Event {
 
 // buildInferRequest builds a ModelInferRequest from the input event
 func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelInferRequest, error) {
+	oic.logger.Debug("Building inference request",
+		slog.Int("input_tensor_count", len(oic.conf.InputTensorSpec)),
+		slog.Bool("has_templates", len(oic.conf.inputTemplateObjMap) > 0),
+	)
 	// Process input through template if specified
 	mapData := make(map[string][]byte)
 	mapLen := make(map[string]int64)
@@ -251,7 +306,17 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 		for _, tensorSpec := range oic.conf.InputTensorSpec {
 			if oic.conf.inputTemplateObjMap[tensorSpec.Name] != nil {
 				// data is a json representation of the input tensors, generated by applying the template to the input event
+				strBody := string(msg.GetBody())
+				oic.logger.Debug("Applying input template",
+					slog.String("tensor_name", tensorSpec.Name),
+					slog.String("template", strBody),
+				)
 				data, err := util.ConvertBody(msg.GetBody(), oic.conf.inputTemplateObjMap[tensorSpec.Name])
+				strData := string(data)
+				oic.logger.Debug("Processed input template",
+					slog.String("tensor_name", tensorSpec.Name),
+					slog.String("processed_data", strData),
+				)
 				if err != nil {
 					return nil, fmt.Errorf("failed to process input template '%s': %w", tensorSpec.Name, err)
 				}
@@ -259,6 +324,11 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert tensor data for '%s': %w", tensorSpec.Name, err)
 				}
+				oic.logger.Debug("Processed tensor via template",
+					slog.String("tensor_name", tensorSpec.Name),
+					slog.String("datatype", tensorSpec.DataType),
+					slog.Int64("element_count", length),
+				)
 				mapData[tensorSpec.Name] = data
 				mapLen[tensorSpec.Name] = length
 			}
@@ -272,6 +342,12 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 		// compute element count
 		elemCount := computeElementCount(oic.conf.InputTensorSpec[0].DataType, len(raw))
 		mapLen[name] = elemCount
+		oic.logger.Debug("Using raw body as tensor input",
+			slog.String("tensor_name", name),
+			slog.String("datatype", oic.conf.InputTensorSpec[0].DataType),
+			slog.Int("raw_bytes", len(raw)),
+			slog.Int64("element_count", elemCount),
+		)
 	}
 
 	// Build the inference request
@@ -317,82 +393,6 @@ func (oic *OpenInferenceClient) buildInferInputTensor(length int64, inputSpec Te
 		Datatype: inputSpec.DataType,
 		Shape:    []int64{1, length},
 	}
-
-	// tensorContents := &pb.InferTensorContents{}
-	// contents, err := util.BytesToTensor(tensor.Datatype, data)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to convert bytes to tensor: %w", err)
-	// }
-
-	// var length = 0
-
-	// // Determine content type based on datatype
-	// switch tensor.Datatype {
-	// case "BOOL":
-	// 	tensorContents.BoolContents = contents.([]bool)
-	// 	length = len(tensorContents.BoolContents)
-	// case "INT8":
-	// 	for _, v := range contents.([]int) {
-	// 		tensorContents.IntContents = append(tensorContents.IntContents, int32(v))
-	// 	}
-	// 	length = len(tensorContents.IntContents)
-	// case "INT16":
-	// 	for _, v := range contents.([]int16) {
-	// 		tensorContents.IntContents = append(tensorContents.IntContents, int32(v))
-	// 	}
-	// 	length = len(tensorContents.IntContents)
-	// case "INT32":
-	// 	for _, v := range contents.([]int32) {
-	// 		tensorContents.IntContents = append(tensorContents.IntContents, int32(v))
-	// 	}
-	// 	length = len(tensorContents.IntContents)
-	// case "INT64":
-	// 	for _, v := range contents.([]int64) {
-	// 		tensorContents.Int64Contents = append(tensorContents.Int64Contents, v)
-	// 	}
-	// 	length = len(tensorContents.Int64Contents)
-	// case "UINT8":
-	// 	for _, v := range contents.([]int) {
-	// 		tensorContents.UintContents = append(tensorContents.UintContents, uint32(v))
-	// 	}
-	// 	length = len(tensorContents.UintContents)
-	// case "UINT16":
-	// 	for _, v := range contents.([]uint16) {
-	// 		tensorContents.UintContents = append(tensorContents.UintContents, uint32(v))
-	// 	}
-	// 	length = len(tensorContents.UintContents)
-	// case "UINT32":
-	// 	for _, v := range contents.([]uint32) {
-	// 		tensorContents.UintContents = append(tensorContents.UintContents, uint32(v))
-	// 	}
-	// 	length = len(tensorContents.UintContents)
-	// case "UINT64":
-	// 	for _, v := range contents.([]uint64) {
-	// 		tensorContents.Uint64Contents = append(tensorContents.Uint64Contents, v)
-	// 	}
-	// 	length = len(tensorContents.Uint64Contents)
-	// case "FP16", "FP32":
-	// 	for _, v := range contents.([]float32) {
-	// 		tensorContents.Fp32Contents = append(tensorContents.Fp32Contents, v)
-	// 	}
-	// 	length = len(tensorContents.Fp32Contents)
-	// case "FP64":
-	// 	for _, v := range contents.([]float64) {
-	// 		tensorContents.Fp64Contents = append(tensorContents.Fp64Contents, v)
-	// 	}
-	// 	length = len(tensorContents.Fp64Contents)
-	// case "BYTES":
-	// 	cont := make([]byte, 0)
-	// 	for _, v := range contents.([]int) {
-	// 		cont = append(cont, byte(v))
-	// 	}
-	// 	tensorContents.BytesContents = [][]byte{cont}
-	// 	length = len(cont)
-	// }
-
-	// tensor.Shape = []int64{1, int64(length)}
-
-	// tensor.Contents = tensorContents
 	return tensor, nil
 }
 
@@ -666,6 +666,12 @@ func convertToInterfaceSlice(v any) []interface{} {
 
 // processResponse processes the inference response
 func (oic *OpenInferenceClient) processResponse(ctx context.Context, response *pb.ModelInferResponse) (streams.Event, error) {
+	oic.logger.Debug("Processing inference response",
+		slog.String("model_name", response.ModelName),
+		slog.String("model_version", response.ModelVersion),
+		slog.Int("output_count", len(response.Outputs)),
+		slog.Bool("has_output_template", oic.conf.outputTemplateObj != nil),
+	)
 	// Convert response to JSON
 	responseData := map[string]any{
 		"model_name":    response.ModelName,
@@ -707,14 +713,15 @@ func (oic *OpenInferenceClient) processResponse(ctx context.Context, response *p
 	// Apply output template if specified
 	var finalData []byte
 	if oic.conf.outputTemplateObj != nil {
+		oic.logger.Debug("Applying output template", slog.Int("response_json_bytes", len(responseJSON)))
 		finalData, err = util.ConvertBody(responseJSON, oic.conf.outputTemplateObj)
 		if err != nil {
 			return nil, fmt.Errorf("failed to process output template: %w", err)
 		}
+		oic.logger.Debug("Output template applied", slog.Int("final_data_bytes", len(finalData)))
 	} else {
 		finalData = responseJSON
 	}
-
 	// Create result event
 	result, err := streams.NewGenericEventBuilder(ctx).
 		WithBody(finalData).
@@ -758,6 +765,11 @@ func (oic *OpenInferenceClient) extractTensorData(datatype string, contents *pb.
 
 // createGRPCConnection creates a gRPC connection with the specified configuration
 func createGRPCConnection(conf Configuration) (*grpc.ClientConn, error) {
+	slog.Default().Debug("Dialing gRPC server",
+		slog.String("address", conf.Address),
+		slog.String("model", conf.ModelName),
+	)
+
 	var opts []grpc.DialOption
 
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -774,6 +786,7 @@ func createGRPCConnection(conf Configuration) (*grpc.ClientConn, error) {
 		return nil, fmt.Errorf("failed to dial gRPC server: %w", err)
 	}
 
+	slog.Default().Debug("gRPC connection ready", slog.String("address", conf.Address))
 	return conn, nil
 }
 

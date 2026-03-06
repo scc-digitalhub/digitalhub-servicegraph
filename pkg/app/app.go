@@ -51,7 +51,11 @@ func generateFlow(outlet streams.Source, node *model.Node) streams.Flow {
 	case model.Sequence:
 		var flow streams.Flow = nil
 		for _, child := range node.Nodes {
-			flow = generateFlow(outlet, &child)
+			if flow == nil {
+				flow = generateFlow(outlet, &child)
+			} else {
+				flow = generateFlow(flow, &child)
+			}
 		}
 		return flow
 	case model.Ensemble:

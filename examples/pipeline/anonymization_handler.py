@@ -115,7 +115,7 @@ def pixelate_region(image, x, y, w, h, pixel_size=15):
     return image
 
 
-def anonymize_image(model, image_bytes, method='blur', blur_factor=50, pixel_size=15):
+def anonymize_image(context, model, image_bytes, method='blur', blur_factor=50, pixel_size=15):
     """
     Anonymize an image by detecting and obscuring faces.
     
@@ -171,7 +171,6 @@ def handler(context, event):
         # Get image from request body
         image_bytes = bytes(request.inputs[0].data)
             
-            
         # Get parameters
         method = request.parameters['method'] if  request.parameters and 'method' in request.parameters else 'blur'
         blur_factor = int(request.parameters['blur_factor']) if request.parameters and 'blur_factor' in request.parameters else 50
@@ -183,16 +182,18 @@ def handler(context, event):
         
         # Anonymize the image
         anonymized_bytes, face_count = anonymize_image(
-            model, image_bytes, method, blur_factor, pixel_size
+            context, model, image_bytes, method, blur_factor, pixel_size
         )
         
         context.logger.info(f"Anonymized {face_count} face(s) using {method} method")
-        
+
+        anonymized_bytes_list = list(anonymized_bytes)
+
         # Return anonymized image
         return {
             "outputs": 
                 [
-                    {"name": "image", "datatype": "UINT8", "data": [anonymized_bytes], "shape": [1, len(anonymized_bytes)]}
+                    {"name": "image", "datatype": "UINT8", "data": anonymized_bytes_list, "shape": [1, len(anonymized_bytes_list)]}
                 ]            
         }
         

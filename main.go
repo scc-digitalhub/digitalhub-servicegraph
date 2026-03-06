@@ -6,8 +6,10 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/app"
@@ -24,6 +26,7 @@ import (
 )
 
 func main() {
+	initLogger()
 	if len(os.Args) >= 2 && os.Args[1] == "--healthcheck" {
 		healthCheck()
 		return
@@ -56,6 +59,25 @@ func healthCheck() {
 		fmt.Fprintf(os.Stderr, "health check returned status %d\n", resp.StatusCode)
 		os.Exit(1)
 	}
+}
+
+// initLogger configures the default slog logger based on the LOG_LEVEL
+// environment variable. Supported values (case-insensitive): debug, info,
+// warn, error. Defaults to info.
+func initLogger() {
+	var level slog.Level
+	switch strings.ToLower(os.Getenv("LOG_LEVEL")) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+	slog.SetDefault(slog.New(h))
 }
 
 func simpleYaml(path string) {
