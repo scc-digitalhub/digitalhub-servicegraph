@@ -85,7 +85,7 @@ function OutputConfigForm({ data, onChange, errors = [] }) {
       {data.kind === 'folder'    && renderFolder()}
       {data.kind === 'webhook'   && renderWebhook()}
       {data.kind === 'websocket' && renderWebSocket()}
-      {(data.kind === 'stdout' || data.kind === 'ignore') && (
+      {(data.kind === 'stdout' || data.kind === 'ignore' || data.kind === 'errorlog') && (
         <Typography variant="body2" color="text.secondary">
           No additional configuration required for this sink type.
         </Typography>

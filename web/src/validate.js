@@ -78,6 +78,8 @@ export function validateGraph(graph) {
   validateInput(graph.input).forEach(e => errors.push({ ...e, path: 'input' }))
   if (graph.output)
     validateOutput(graph.output).forEach(e => errors.push({ ...e, path: 'output' }))
+  if (graph.error)
+    validateOutput(graph.error).forEach(e => errors.push({ ...e, path: 'error' }))
   if (graph.flow)
     validateNodeRecursive(graph.flow, 'flow', errors)
   return errors

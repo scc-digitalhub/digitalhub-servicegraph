@@ -16,7 +16,7 @@ function ConfigDialog() {
   const {
     configDialogOpen, configDialogType, configDialogData, configDialogPath,
     closeConfigDialog, openConfigDialog,
-    updateInput, updateOutput, updateNode, addNode, deleteNode,
+    updateInput, updateOutput, updateError, updateNode, addNode, deleteNode,
   } = useGraphStore()
 
   const [formData, setFormData] = useState(null)
@@ -31,18 +31,21 @@ function ConfigDialog() {
   const isAddMode   = configDialogType === 'add_node'
   const isRootNode  = configDialogType === 'node' && configDialogPath === null
   const isContainer = isNodeType && ['sequence', 'ensemble', 'switch'].includes(formData.type)
+  const isSinkType  = configDialogType === 'output' || configDialogType === 'error'
 
   // Compute field-level validation errors for the current form
   const formErrors =
-    configDialogType === 'input'  ? validateInput(formData)  :
-    configDialogType === 'output' ? validateOutput(formData) :
-    isNodeType                    ? validateNode(formData)   : []
+    configDialogType === 'input' ? validateInput(formData)  :
+    isSinkType                   ? validateOutput(formData) :
+    isNodeType                   ? validateNode(formData)   : []
 
   const handleSave = () => {
     if (configDialogType === 'input') {
       updateInput(formData)
     } else if (configDialogType === 'output') {
       updateOutput(formData)
+    } else if (configDialogType === 'error') {
+      updateError(formData)
     } else if (configDialogType === 'node') {
       updateNode(configDialogPath, formData)
     } else if (configDialogType === 'add_node') {
@@ -64,6 +67,7 @@ function ConfigDialog() {
   const titles = {
     input:    'Configure Input Source',
     output:   'Configure Output Sink',
+    error:    'Configure Error Sink',
     node:     isRootNode ? 'Configure Root Flow' : 'Configure Node',
     add_node: 'Add New Node',
   }
@@ -86,7 +90,7 @@ function ConfigDialog() {
 
       <DialogContent sx={{ pt: 2, pb: 1 }}>
         {configDialogType === 'input'  && <InputConfigForm  data={formData} onChange={setFormData} errors={formErrors} />}
-        {configDialogType === 'output' && <OutputConfigForm data={formData} onChange={setFormData} errors={formErrors} />}
+        {isSinkType                    && <OutputConfigForm data={formData} onChange={setFormData} errors={formErrors} />}
         {isNodeType                    && <NodeConfigForm   data={formData} onChange={setFormData} isNew={isAddMode} errors={formErrors} />}
       </DialogContent>
 

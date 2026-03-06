@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 
 // Available types based on the Go registries
-export const NODE_KINDS  = ['http', 'websocket', 'openinference']
-export const SOURCE_KINDS = ['http', 'websocket', 'mjpeg']
-export const SINK_KINDS  = ['stdout', 'file', 'folder', 'ignore', 'webhook', 'websocket']
-export const NODE_TYPES  = ['sequence', 'ensemble', 'switch', 'service']
+export const NODE_KINDS       = ['http', 'websocket', 'openinference']
+export const SOURCE_KINDS     = ['http', 'websocket', 'mjpeg']
+export const SINK_KINDS       = ['stdout', 'file', 'folder', 'ignore', 'webhook', 'websocket']
+export const ERROR_SINK_KINDS = ['errorlog']
+export const NODE_TYPES       = ['sequence', 'ensemble', 'switch', 'service']
 
 // Default blank node for the "add node" dialog
 export const DEFAULT_NEW_NODE = {
@@ -43,6 +44,7 @@ const initialState = {
       nodes: [],
     },
     output: null,
+    error:  null,
   },
   selectedNode: null,
 
@@ -59,6 +61,7 @@ export const useGraphStore = create((set, get) => ({
   // ── Source / sink ──────────────────────────────────────────────────────────
   updateInput:  (input)  => set((s) => ({ graph: { ...s.graph, input } })),
   updateOutput: (output) => set((s) => ({ graph: { ...s.graph, output } })),
+  updateError:  (error)  => set((s) => ({ graph: { ...s.graph, error } })),
 
   // ── Node CRUD ──────────────────────────────────────────────────────────────
 
@@ -94,6 +97,7 @@ export const useGraphStore = create((set, get) => ({
   /** Open dialog:
    *  type='input'    → data=inputSpec,    path=undefined
    *  type='output'   → data=outputSpec,   path=undefined
+   *  type='error'    → data=errorSpec,    path=undefined
    *  type='node'     → data=nodeObject,   path=null|[...]  (null=root)
    *  type='add_node' → data=newNodeStub,  path=null|[...]  (parent path)
    */
@@ -115,7 +119,12 @@ export const useGraphStore = create((set, get) => ({
   setSelectedNode: (node) => set({ selectedNode: node }),
 
   // ── Import / Export ────────────────────────────────────────────────────────
-  exportGraph: () => JSON.parse(JSON.stringify(get().graph)),
+  exportGraph: () => {
+    const g = JSON.parse(JSON.stringify(get().graph))
+    // Strip null top-level fields so the exported YAML is clean
+    Object.keys(g).forEach(k => { if (g[k] === null || g[k] === undefined) delete g[k] })
+    return g
+  },
 
   importGraph: (graph) => set({ graph }),
 
