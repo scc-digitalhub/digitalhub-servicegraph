@@ -14,6 +14,28 @@ flow:
   name: "vqa-pipeline"
   nodes:
     - type: "service"
+      name: "anon-service"
+      config:
+        kind: "openinference"
+        spec:
+          address: "anonymization:9000"
+          model_name: "haar_face_cascade"
+          num_instances: 4  
+          timeout: 10      
+
+          input_tensor_spec:
+            - name: "image"
+              datatype: "UINT8"
+              shape: [-1, -1]
+          
+          output_tensor_spec:
+            - name: "image"
+              datatype: "UINT8"
+              shape: [-1, -1]
+                    
+          output_template: |
+            {{. | jp "$.outputs[0].data" | json }}
+    - type: "service"
       name: "blip-vqa-service"
       config:
         kind: "openinference"
@@ -22,15 +44,21 @@ flow:
           model_name: "vqa_blip"
           num_instances: 4  
           timeout: 10      
+
           input_tensor_spec:
             - name: "image"
               datatype: "UINT8"
               shape: [-1, -1]
+          
           output_tensor_spec:
             - name: "caption"
               datatype: "BYTES"
               shape: [-1, -1]
-                    
+          
+          input_templates:
+            - name: "image"
+              template: |
+                {{ . }}
           output_template: |
             {
               "caption": {{. | jp "$.outputs[0].data" }},
