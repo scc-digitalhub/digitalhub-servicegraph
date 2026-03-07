@@ -67,6 +67,42 @@ input:
 
 The MJPEG source emits events where `GetBody()` returns the JPEG bytes and `GetFrameNumber()` exposes the 1-based frame index.
 
+### RTSP Source
+Connects to an RTSP server and emits either MJPEG video frames or LPCM audio chunks as events. The codec is auto-detected from the stream; an error is returned if no supported format is found. Supports automatic reconnection with exponential back-off.
+
+**Configuration:**
+- `url` (string): RTSP stream address (required).
+- `media_type` (string): `"video"` or `"audio"` (required).
+- `frame_interval` (int): Emit one out of every N frames; 1 = all frames (video only, default: 1).
+- `audio_max_size` (int): Maximum rolling audio buffer size in bytes (audio only, default: 1 048 576).
+- `audio_processing_interval` (int): Interval in ms at which the buffer is checked and a message emitted (audio only, default: 1000).
+- `audio_chunk_size` (int): When > 0, emit exactly this many bytes taken from the tail of the buffer per interval; 0 = emit a full buffer snapshot (audio only, default: 0).
+- `max_retries` (int): Maximum reconnect attempts; 0 = unlimited (default: 0).
+- `retry_backoff` (int): Initial reconnect back-off in ms; doubles each attempt, capped at 30 s (default: 1000).
+
+**Usage — video:**
+```yaml
+input:
+  kind: "rtsp"
+  spec:
+    url: "rtsp://camera.local/live"
+    media_type: "video"
+    frame_interval: 2
+```
+
+**Usage — audio:**
+```yaml
+input:
+  kind: "rtsp"
+  spec:
+    url: "rtsp://camera.local/live"
+    media_type: "audio"
+    audio_chunk_size: 8192
+    audio_processing_interval: 500
+```
+
+Video events carry the JPEG bytes in `GetBody()` with `Content-Type: image/jpeg` and an `X-Frame-Number` header. Audio events carry raw LPCM bytes in `GetBody()` with `Content-Type: audio/L16`.
+
 ## Sinks
 
 Service Graph supports the following sink types:

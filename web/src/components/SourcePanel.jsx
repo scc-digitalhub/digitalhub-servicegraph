@@ -17,6 +17,7 @@ function SourcePanel() {
       http:      { port: 8080 },
       websocket: { port: 8080, path: '/ws' },
       mjpeg:     { url: 'http://localhost:8081/video' },
+      rtsp:      { url: 'rtsp://localhost:8554/stream', media_type: 'video' },
     }
     updateInput({ kind, spec: defaults[kind] || {} })
   }
@@ -49,7 +50,7 @@ function SourcePanel() {
       <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" sx={{ mb: 0.5 }}>
         Available Sources
       </Typography>
-      {[['http','HTTP server endpoint'],['websocket','WebSocket server'],['mjpeg','MJPEG stream source']].map(([n,d]) => (
+      {[['http','HTTP server endpoint'],['websocket','WebSocket server'],['mjpeg','MJPEG stream source'],['rtsp','RTSP stream (video/audio)']].map(([n,d]) => (
         <Typography key={n} variant="caption" color="text.secondary" display="block" sx={{ mb: 0.25 }}>
           <strong>{n}</strong>: {d}
         </Typography>

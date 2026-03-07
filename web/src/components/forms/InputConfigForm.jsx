@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, TextField } from '@mui/material'
+import { Box, FormControl, FormHelperText, InputLabel, MenuItem, Select, TextField } from '@mui/material'
 
 function InputConfigForm({ data, onChange, errors = [] }) {
   const fe = (field) => {
@@ -55,6 +55,35 @@ function InputConfigForm({ data, onChange, errors = [] }) {
     {numField('Read Timeout (s)', 'read_timeout', '10', 'Default: 10 s')}
   </>)
 
+  const renderRTSP = () => {
+    const mediaType = data.spec.media_type || 'video'
+    const isVideo = mediaType === 'video'
+    const isAudio = mediaType === 'audio'
+    const mtErr = errors.find(e => e.field === 'media_type')
+    return (<>
+      <TextField label="URL" size="small" fullWidth required
+        value={data.spec.url || ''} placeholder="rtsp://camera-host/stream"
+        onChange={(e) => updateSpec('url', e.target.value)}
+        {...fe('url')}
+        sx={{ mb: 2 }} />
+      <FormControl size="small" fullWidth required sx={{ mb: 2 }} error={!!mtErr}>
+        <InputLabel>Media Type</InputLabel>
+        <Select label="Media Type" value={mediaType}
+          onChange={(e) => updateSpec('media_type', e.target.value)}>
+          <MenuItem value="video">Video</MenuItem>
+          <MenuItem value="audio">Audio</MenuItem>
+        </Select>
+        {mtErr && <FormHelperText>{mtErr.message}</FormHelperText>}
+      </FormControl>
+      {isVideo && numField('Frame Interval', 'frame_interval', '1', 'Process every Nth frame. Default: 1')}
+      {isAudio && numField('Audio Max Size (B)',          'audio_max_size',            '1048576', 'Max audio buffer size in bytes. Default: 1 MB')}
+      {isAudio && numField('Audio Processing Interval (ms)', 'audio_processing_interval', '1000',    'Interval to flush audio buffer. Default: 1000 ms')}
+      {isAudio && numField('Audio Chunk Size (B)',         'audio_chunk_size',          '0',       'Sliding-window chunk size (0 = disabled). Default: 0')}
+      {numField('Max Retries',    'max_retries',   '0',    'Reconnect attempts before giving up (0 = unlimited). Default: 0')}
+      {numField('Retry Backoff (ms)', 'retry_backoff', '1000', 'Delay between reconnect attempts. Default: 1000 ms')}
+    </>)
+  }
+
   return (
     <Box>
       <TextField label="Source Type" size="small" fullWidth disabled
@@ -62,6 +91,7 @@ function InputConfigForm({ data, onChange, errors = [] }) {
       {data.kind === 'http'      && renderHTTP()}
       {data.kind === 'websocket' && renderWebSocket()}
       {data.kind === 'mjpeg'     && renderMJPEG()}
+      {data.kind === 'rtsp'      && renderRTSP()}
     </Box>
   )
 }

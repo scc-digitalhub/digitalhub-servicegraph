@@ -19,9 +19,11 @@ import (
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/openinferenceclient"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/nodes/wsclient"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/base"
+	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/errorlog"
 
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/http"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/mjpeg"
+	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/rtsp"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/websocket"
 )
 

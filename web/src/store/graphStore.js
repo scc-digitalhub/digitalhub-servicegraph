@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 // Available types based on the Go registries
 export const NODE_KINDS       = ['http', 'websocket', 'openinference']
-export const SOURCE_KINDS     = ['http', 'websocket', 'mjpeg']
+export const SOURCE_KINDS     = ['http', 'websocket', 'mjpeg', 'rtsp']
 export const SINK_KINDS       = ['stdout', 'file', 'folder', 'ignore', 'webhook', 'websocket']
 export const ERROR_SINK_KINDS = ['errorlog']
 export const NODE_TYPES       = ['sequence', 'ensemble', 'switch', 'service']
