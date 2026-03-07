@@ -141,6 +141,11 @@ func (s *RTSPSource) streamMedia(ctx context.Context, output chan any) error {
 		if err := setupVideoTrack(ctx, s.Conf, c, desc, output, s.logger); err != nil {
 			return err
 		}
+		if _, err := c.Play(nil); err != nil {
+			return fmt.Errorf("starting RTSP play: %w", err)
+		}
+		s.logger.Info("RTSP video play started")
+		return s.waitForEnd(ctx, c)
 	case MediaTypeAudio:
 		buf := newAudioBuffer(s.Conf.AudioMaxSize)
 		if err := setupAudioTrack(s.Conf, c, desc, buf, s.logger); err != nil {
@@ -155,12 +160,6 @@ func (s *RTSPSource) streamMedia(ctx context.Context, output chan any) error {
 	default:
 		return fmt.Errorf("unknown media_type %q", s.Conf.MediaType)
 	}
-
-	if _, err := c.Play(nil); err != nil {
-		return fmt.Errorf("starting RTSP play: %w", err)
-	}
-	s.logger.Info("RTSP video play started")
-	return s.waitForEnd(ctx, c)
 }
 
 // waitForEnd blocks until ctx is cancelled or c.Wait() returns.
