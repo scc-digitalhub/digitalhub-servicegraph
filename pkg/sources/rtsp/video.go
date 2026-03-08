@@ -127,11 +127,12 @@ func setupVideoTrack(ctx context.Context, conf *Configuration, c *gortsplib.Clie
 		})
 	}
 	if h264Fmt != nil {
-		h264FirstIDR := make(map[uint8]bool) // track payload type -> whether first IDR frame has been seen
+		var h264SeenIDR bool
 		h264Decoder, err := h264.NewOpenH264Decoder()
 		if err != nil {
 			return err
 		}
+		defer h264Decoder.Close()
 		depacketizer, err := h264Fmt.CreateDecoder()
 		if err != nil {
 			return err
@@ -155,14 +156,12 @@ func setupVideoTrack(ctx context.Context, conf *Configuration, c *gortsplib.Clie
 				return
 			}
 
-			pt := h264Fmt.PayloadType()
-
-			// wait first IDR
-			if !h264FirstIDR[pt] {
+			// wait for first IDR frame before emitting any events
+			if !h264SeenIDR {
 				if !containsIDR(au) {
 					return
 				}
-				h264FirstIDR[pt] = true
+				h264SeenIDR = true
 			}
 
 			yuv, w, h, err := h264Decoder.Decode(au)
@@ -177,7 +176,7 @@ func setupVideoTrack(ctx context.Context, conf *Configuration, c *gortsplib.Clie
 					slog.Int("interval", conf.FrameInterval))
 				return
 			}
-			jpeg, err := EncodeFrameToJPEG(yuv, w, h, 80)
+			jpeg, err := EncodeFrameToJPEG(yuv, w, h, conf.JPEGQuality)
 			if err != nil {
 				return
 			}
@@ -190,7 +189,11 @@ func setupVideoTrack(ctx context.Context, conf *Configuration, c *gortsplib.Clie
 		})
 	}
 
-	logger.Info("MJPEG video track set up")
+	codec := "h264"
+	if mjpegFmt != nil {
+		codec = "mjpeg"
+	}
+	logger.Info("Video track set up", slog.String("codec", codec))
 	return nil
 }
 

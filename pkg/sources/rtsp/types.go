@@ -13,11 +13,12 @@ const (
 )
 
 const (
-	defaultFrameInterval      = 1
-	defaultAudioMaxSize       = 1 * 1024 * 1024
+	defaultFrameInterval           = 1
+	defaultJPEGQuality             = 80
+	defaultAudioMaxSize            = 1 * 1024 * 1024
 	defaultAudioProcessingInterval = 1000
-	defaultAudioChunkSize     = 0 // 0 = disabled; emit full buffer snapshot
-	defaultRetryBackoff       = 1000
+	defaultAudioChunkSize          = 0 // 0 = disabled; emit full buffer snapshot
+	defaultRetryBackoff            = 1000
 )
 
 // Configuration holds all RTSP source settings.
@@ -28,12 +29,14 @@ type Configuration struct {
 	MediaType MediaType `json:"media_type"`
 	// FrameInterval: 1 = every frame, N = one out of N frames (video only).
 	FrameInterval int `json:"frame_interval,omitempty"`
+	// JPEGQuality controls JPEG encoding quality for H.264 frames (1–100). Default: 80.
+	JPEGQuality int `json:"jpeg_quality,omitempty"`
 	// AudioMaxSize: maximum rolling audio buffer size in bytes (audio only).
 	AudioMaxSize int `json:"audio_max_size,omitempty"`
 	// AudioProcessingInterval: interval in ms at which audio data is emitted (audio only).
 	AudioProcessingInterval int `json:"audio_processing_interval,omitempty"`
-	// AudioChunkSize: if > 0, emit exactly this many bytes per message in a sliding
-	// manner (advancing the read cursor); 0 = emit a full buffer snapshot each interval.
+	// AudioChunkSize: if > 0, each event contains the latest AudioChunkSize bytes from
+	// the buffer tail; 0 = emit a full buffer snapshot each interval.
 	AudioChunkSize int `json:"audio_chunk_size,omitempty"`
 	// MaxRetries: max reconnect attempts; 0 = unlimited.
 	MaxRetries int `json:"max_retries,omitempty"`
@@ -41,21 +44,56 @@ type Configuration struct {
 	RetryBackoff int `json:"retry_backoff,omitempty"`
 }
 
-// NewConfiguration returns a Configuration with sensible defaults applied.
-func NewConfiguration(url string, mediaType MediaType,
-	frameInterval, audioBufBytes, audioFlushMs, audioChunkSize, maxRetries, retryBackoffMs int) *Configuration {
-	c := &Configuration{
-		URL:                url,
-		MediaType:          mediaType,
-		FrameInterval:      frameInterval,
-		AudioMaxSize:       audioBufBytes,
-		AudioProcessingInterval: audioFlushMs,
-		AudioChunkSize:     audioChunkSize,
-		MaxRetries:         maxRetries,
-		RetryBackoff:       retryBackoffMs,
+// Option is a functional option for NewConfiguration.
+type Option func(*Configuration)
+
+// WithFrameInterval sets the frame-skip interval for video (1 = every frame).
+func WithFrameInterval(n int) Option {
+	return func(c *Configuration) { c.FrameInterval = n }
+}
+
+// WithJPEGQuality sets the JPEG encoding quality for H.264 video (1–100).
+func WithJPEGQuality(q int) Option {
+	return func(c *Configuration) { c.JPEGQuality = q }
+}
+
+// WithAudioMaxSize sets the maximum rolling audio buffer size in bytes.
+func WithAudioMaxSize(n int) Option {
+	return func(c *Configuration) { c.AudioMaxSize = n }
+}
+
+// WithAudioProcessingInterval sets the flush interval in milliseconds.
+func WithAudioProcessingInterval(ms int) Option {
+	return func(c *Configuration) { c.AudioProcessingInterval = ms }
+}
+
+// WithAudioChunkSize sets the sliding-window chunk size in bytes (0 = full snapshot).
+func WithAudioChunkSize(n int) Option {
+	return func(c *Configuration) { c.AudioChunkSize = n }
+}
+
+// WithMaxRetries sets the maximum reconnect attempts (0 = unlimited).
+func WithMaxRetries(n int) Option {
+	return func(c *Configuration) { c.MaxRetries = n }
+}
+
+// WithRetryBackoff sets the initial retry back-off in milliseconds.
+func WithRetryBackoff(ms int) Option {
+	return func(c *Configuration) { c.RetryBackoff = ms }
+}
+
+// NewConfiguration returns a Configuration with the supplied options and sensible
+// defaults applied for any unset fields.
+func NewConfiguration(url string, mediaType MediaType, opts ...Option) *Configuration {
+	c := &Configuration{URL: url, MediaType: mediaType}
+	for _, opt := range opts {
+		opt(c)
 	}
 	if c.FrameInterval <= 0 {
 		c.FrameInterval = defaultFrameInterval
+	}
+	if c.JPEGQuality <= 0 || c.JPEGQuality > 100 {
+		c.JPEGQuality = defaultJPEGQuality
 	}
 	if c.AudioMaxSize <= 0 {
 		c.AudioMaxSize = defaultAudioMaxSize

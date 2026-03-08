@@ -76,6 +76,7 @@ function InputConfigForm({ data, onChange, errors = [] }) {
         {mtErr && <FormHelperText>{mtErr.message}</FormHelperText>}
       </FormControl>
       {isVideo && numField('Frame Interval', 'frame_interval', '1', 'Process every Nth frame. Default: 1')}
+      {isVideo && numField('JPEG Quality', 'jpeg_quality', '80', 'JPEG encoding quality for H.264 frames (1–100). Default: 80')}
       {isAudio && numField('Audio Max Size (B)',          'audio_max_size',            '1048576', 'Max audio buffer size in bytes. Default: 1 MB')}
       {isAudio && numField('Audio Processing Interval (ms)', 'audio_processing_interval', '1000',    'Interval to flush audio buffer. Default: 1000 ms')}
       {isAudio && numField('Audio Chunk Size (B)',         'audio_chunk_size',          '0',       'Sliding-window chunk size (0 = disabled). Default: 0')}

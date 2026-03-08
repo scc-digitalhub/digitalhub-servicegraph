@@ -79,7 +79,15 @@ func (s *RTSPSource) StartAsync(factory sources.FlowFactory, sink streams.Sink) 
 		attempt := 0
 
 		for {
-			if err := s.streamMedia(ctx, s.input); err != nil {
+			start := time.Now()
+			err := s.streamMedia(ctx, s.input)
+			// If the session was active longer than the initial backoff it clearly connected
+			// successfully; reset retry state so brief disconnects don't exhaust max retries.
+			if time.Since(start) > initialBackoff {
+				attempt = 0
+				backoff = initialBackoff
+			}
+			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					s.logger.Info("RTSP stream cancelled, shutting down")
 					return
@@ -148,14 +156,15 @@ func (s *RTSPSource) streamMedia(ctx context.Context, output chan any) error {
 		return s.waitForEnd(ctx, c)
 	case MediaTypeAudio:
 		buf := newAudioBuffer(s.Conf.AudioMaxSize)
-		if err := setupAudioTrack(s.Conf, c, desc, buf, s.logger); err != nil {
+		audioFmt, err := setupAudioTrack(s.Conf, c, desc, buf, s.logger)
+		if err != nil {
 			return err
 		}
 		if _, err := c.Play(nil); err != nil {
 			return fmt.Errorf("starting RTSP play: %w", err)
 		}
 		s.logger.Info("RTSP audio play started")
-		startAudioFlusher(ctx, s.Conf, buf, output)
+		startAudioFlusher(ctx, s.Conf, buf, audioFmt, output)
 		return s.waitForEnd(ctx, c)
 	default:
 		return fmt.Errorf("unknown media_type %q", s.Conf.MediaType)
@@ -200,12 +209,13 @@ func (p *RTSPSourceProcessor) Convert(input model.InputSpec) (sources.Source, er
 	conf = NewConfiguration(
 		conf.URL,
 		conf.MediaType,
-		conf.FrameInterval,
-		conf.AudioMaxSize,
-		conf.AudioProcessingInterval,
-		conf.AudioChunkSize,
-		conf.MaxRetries,
-		conf.RetryBackoff,
+		WithFrameInterval(conf.FrameInterval),
+		WithJPEGQuality(conf.JPEGQuality),
+		WithAudioMaxSize(conf.AudioMaxSize),
+		WithAudioProcessingInterval(conf.AudioProcessingInterval),
+		WithAudioChunkSize(conf.AudioChunkSize),
+		WithMaxRetries(conf.MaxRetries),
+		WithRetryBackoff(conf.RetryBackoff),
 	)
 	return NewRTSPSource(conf), nil
 }

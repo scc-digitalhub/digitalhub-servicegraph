@@ -16,7 +16,7 @@ import (
 // ---- Configuration ---------------------------------------------------------
 
 func TestNewConfigurationDefaults(t *testing.T) {
-	c := NewConfiguration("rtsp://cam/live", MediaTypeVideo, 0, 0, 0, 0, 0, 0)
+	c := NewConfiguration("rtsp://cam/live", MediaTypeVideo)
 	if c.URL != "rtsp://cam/live" {
 		t.Fatalf("expected URL to be set, got %q", c.URL)
 	}
@@ -25,6 +25,9 @@ func TestNewConfigurationDefaults(t *testing.T) {
 	}
 	if c.FrameInterval != defaultFrameInterval {
 		t.Fatalf("expected default FrameInterval=%d, got %d", defaultFrameInterval, c.FrameInterval)
+	}
+	if c.JPEGQuality != defaultJPEGQuality {
+		t.Fatalf("expected default JPEGQuality=%d, got %d", defaultJPEGQuality, c.JPEGQuality)
 	}
 	if c.AudioMaxSize != defaultAudioMaxSize {
 		t.Fatalf("expected default AudioMaxSize=%d, got %d", defaultAudioMaxSize, c.AudioMaxSize)
@@ -41,7 +44,15 @@ func TestNewConfigurationDefaults(t *testing.T) {
 }
 
 func TestNewConfigurationExplicitValues(t *testing.T) {
-	c := NewConfiguration("rtsp://cam/live", MediaTypeAudio, 3, 2048, 500, 4096, 5, 2000)
+	c := NewConfiguration("rtsp://cam/live", MediaTypeAudio,
+		WithFrameInterval(3),
+		WithAudioMaxSize(2048),
+		WithAudioProcessingInterval(500),
+		WithAudioChunkSize(4096),
+		WithMaxRetries(5),
+		WithRetryBackoff(2000),
+		WithJPEGQuality(70),
+	)
 	if c.MediaType != MediaTypeAudio {
 		t.Fatalf("expected MediaType=audio, got %q", c.MediaType)
 	}
@@ -62,6 +73,9 @@ func TestNewConfigurationExplicitValues(t *testing.T) {
 	}
 	if c.RetryBackoff != 2000 {
 		t.Fatalf("expected RetryBackoff=2000, got %d", c.RetryBackoff)
+	}
+	if c.JPEGQuality != 70 {
+		t.Fatalf("expected JPEGQuality=70, got %d", c.JPEGQuality)
 	}
 }
 
@@ -113,7 +127,7 @@ func TestNewRTSPAudioEvent(t *testing.T) {
 	audioData := []byte{0x00, 0x01, 0x02, 0x03}
 	url := "rtsp://cam/live"
 	ctx := context.Background()
-	e := NewRTSPAudioEvent(ctx, audioData, url)
+	e := NewRTSPAudioEvent(ctx, audioData, url, 44100, 16, 2)
 	if !bytes.Equal(e.GetBody(), audioData) {
 		t.Fatalf("body mismatch")
 	}
@@ -133,7 +147,7 @@ func TestNewRTSPAudioEvent(t *testing.T) {
 
 func TestNewRTSPAudioEvent_DefensiveCopy(t *testing.T) {
 	audioData := []byte{0x10, 0x20, 0x30}
-	e := NewRTSPAudioEvent(context.Background(), audioData, "rtsp://cam/live")
+	e := NewRTSPAudioEvent(context.Background(), audioData, "rtsp://cam/live", 16000, 16, 1)
 	audioData[0] = 0xFF
 	if e.GetBody()[0] == 0xFF {
 		t.Fatalf("RTSPAudioEvent should store a defensive copy of audio data")
@@ -141,13 +155,22 @@ func TestNewRTSPAudioEvent_DefensiveCopy(t *testing.T) {
 }
 
 func TestRTSPAudioEvent_Headers(t *testing.T) {
-	e := NewRTSPAudioEvent(context.Background(), []byte{}, "rtsp://cam/live")
+	e := NewRTSPAudioEvent(context.Background(), []byte{}, "rtsp://cam/live", 48000, 16, 2)
 	headers := e.GetHeaders()
 	if headers["Content-Type"] != "audio/L16" {
 		t.Fatalf("expected Content-Type=audio/L16, got %q", headers["Content-Type"])
 	}
 	if headers["X-Source-URL"] != "rtsp://cam/live" {
 		t.Fatalf("expected X-Source-URL header, got %q", headers["X-Source-URL"])
+	}
+	if headers["X-Audio-Sample-Rate"] != "48000" {
+		t.Fatalf("expected X-Audio-Sample-Rate=48000, got %q", headers["X-Audio-Sample-Rate"])
+	}
+	if headers["X-Audio-Bit-Depth"] != "16" {
+		t.Fatalf("expected X-Audio-Bit-Depth=16, got %q", headers["X-Audio-Bit-Depth"])
+	}
+	if headers["X-Audio-Channels"] != "2" {
+		t.Fatalf("expected X-Audio-Channels=2, got %q", headers["X-Audio-Channels"])
 	}
 	if e.GetHeader("Content-Type") != "audio/L16" {
 		t.Fatalf("GetHeader(Content-Type) mismatch")
@@ -342,11 +365,11 @@ func TestRTSPSourceProcessor_Validate(t *testing.T) {
 		{
 			name: "valid audio with extra fields",
 			spec: map[string]interface{}{
-				"url":                  "rtsp://cam/live",
-				"media_type":           "audio",
-				"audio_max_size":       4096,
+				"url":                       "rtsp://cam/live",
+				"media_type":                "audio",
+				"audio_max_size":            4096,
 				"audio_processing_interval": 500,
-				"audio_chunk_size":     1024,
+				"audio_chunk_size":          1024,
 			},
 			wantErr: false,
 		},
@@ -430,11 +453,11 @@ func TestRTSPSourceProcessor_Convert_Video(t *testing.T) {
 func TestRTSPSourceProcessor_Convert_Audio(t *testing.T) {
 	p := &RTSPSourceProcessor{}
 	spec := map[string]interface{}{
-		"url":                  "rtsp://cam/live",
-		"media_type":           "audio",
-		"audio_max_size":       2048,
+		"url":                       "rtsp://cam/live",
+		"media_type":                "audio",
+		"audio_max_size":            2048,
 		"audio_processing_interval": 200,
-		"audio_chunk_size":     512,
+		"audio_chunk_size":          512,
 	}
 	src, err := p.Convert(model.InputSpec{Spec: spec})
 	if err != nil {
