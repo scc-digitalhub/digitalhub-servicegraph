@@ -16,13 +16,19 @@ import (
 	"github.com/bluenviron/gortsplib/v4/pkg/format"
 	"github.com/pion/rtp"
 
+	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/rtsp/g711"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/streams"
 )
 
 // RTSPAudioEvent carries a snapshot of the rolling LPCM audio buffer.
+// All payloads are delivered as 16-bit big-endian linear PCM regardless of
+// the wire codec (LPCM, G.711 µ-law, or G.711 A-law); the original codec is
+// reported in the X-Audio-Codec header so downstream nodes can identify the
+// source without inspecting the bytes.
 type RTSPAudioEvent struct {
 	streams.GenericEvent
 	audioData  []byte
+	codec      string // "lpcm", "g711-ulaw", "g711-alaw"
 	sampleRate int
 	bitDepth   int
 	channels   int
@@ -31,13 +37,16 @@ type RTSPAudioEvent struct {
 	url        string
 }
 
-// NewRTSPAudioEvent creates a new RTSPAudioEvent with a defensive copy of the audio data.
-// sampleRate, bitDepth and channels are the PCM encoding parameters reported by the stream.
-func NewRTSPAudioEvent(ctx context.Context, audioData []byte, url string, sampleRate, bitDepth, channels int) *RTSPAudioEvent {
+// NewRTSPAudioEvent creates a new RTSPAudioEvent with a defensive copy of the
+// audio data.  codec identifies the wire format ("lpcm", "g711-ulaw",
+// "g711-alaw"); sampleRate, bitDepth and channels describe the expanded PCM.
+func NewRTSPAudioEvent(ctx context.Context, audioData []byte, url string,
+	codec string, sampleRate, bitDepth, channels int) *RTSPAudioEvent {
 	dataCopy := make([]byte, len(audioData))
 	copy(dataCopy, audioData)
 	return &RTSPAudioEvent{
 		audioData:  dataCopy,
+		codec:      codec,
 		sampleRate: sampleRate,
 		bitDepth:   bitDepth,
 		channels:   channels,
@@ -57,6 +66,7 @@ func (e *RTSPAudioEvent) GetHeaders() map[string]string {
 	return map[string]string{
 		"Content-Type":        "audio/L16",
 		"X-Source-URL":        e.url,
+		"X-Audio-Codec":       e.codec,
 		"X-Audio-Sample-Rate": fmt.Sprintf("%d", e.sampleRate),
 		"X-Audio-Bit-Depth":   fmt.Sprintf("%d", e.bitDepth),
 		"X-Audio-Channels":    fmt.Sprintf("%d", e.channels),
@@ -112,53 +122,106 @@ func (b *audioBuffer) latestChunk(chunkSize int) []byte {
 	return chunk
 }
 
-// audioFormat holds the PCM encoding parameters discovered when the LPCM track is set up.
-// These are forwarded to every RTSPAudioEvent so that downstream nodes can decode the payload.
+// audioFormat holds the PCM encoding parameters discovered during track setup.
+// They are forwarded to every RTSPAudioEvent so downstream nodes can interpret
+// the payload.  bitDepth is always 16 (the expanded L16 representation);
+// codec identifies the wire encoding before expansion.
 type audioFormat struct {
+	codec      string // "lpcm", "g711-ulaw", "g711-alaw"
 	sampleRate int
-	bitDepth   int
+	bitDepth   int // always 16 after expansion
 	channels   int
 }
 
-// setupAudioTrack finds the LPCM track in the RTSP session, registers the RTP
-// callback that fills buf, and calls c.Setup on the media.
-// It returns the discovered audio format or an error if no supported audio format is present.
+// setupAudioTrack probes the RTSP session for a supported audio format,
+// registers an RTP callback that fills buf with 16-bit big-endian LPCM, and
+// calls c.Setup on the selected media.
+//
+// Priority: LPCM (direct) → G.711 µ-law → G.711 A-law.
+// G.711 samples are expanded to 16-bit linear PCM inline with no external
+// tools; the original wire codec is recorded in the returned audioFormat.
 func setupAudioTrack(conf *Configuration, c *gortsplib.Client,
 	desc *description.Session, buf *audioBuffer, logger *slog.Logger) (audioFormat, error) {
 
+	// ── LPCM (preferred) ────────────────────────────────────────────────────
 	var lpcmFmt *format.LPCM
-	medi := desc.FindFormat(&lpcmFmt)
-	if medi == nil {
-		return audioFormat{}, fmt.Errorf("no supported audio format found in RTSP stream (supported: lpcm)")
-	}
-
-	rtpDec, err := lpcmFmt.CreateDecoder()
-	if err != nil {
-		return audioFormat{}, fmt.Errorf("creating LPCM RTP decoder: %w", err)
-	}
-
-	if _, err := c.Setup(desc.BaseURL, medi, 0, 0); err != nil {
-		return audioFormat{}, fmt.Errorf("setting up LPCM audio track: %w", err)
-	}
-
-	c.OnPacketRTP(medi, lpcmFmt, func(pkt *rtp.Packet) {
-		samples, err := rtpDec.Decode(pkt)
+	if medi := desc.FindFormat(&lpcmFmt); medi != nil {
+		rtpDec, err := lpcmFmt.CreateDecoder()
 		if err != nil {
-			logger.Warn("LPCM decode error", slog.Any("error", err))
+			return audioFormat{}, fmt.Errorf("creating LPCM RTP decoder: %w", err)
+		}
+		if _, err := c.Setup(desc.BaseURL, medi, 0, 0); err != nil {
+			return audioFormat{}, fmt.Errorf("setting up LPCM audio track: %w", err)
+		}
+		c.OnPacketRTP(medi, lpcmFmt, func(pkt *rtp.Packet) {
+			samples, err := rtpDec.Decode(pkt)
+			if err != nil {
+				logger.Warn("LPCM decode error", slog.Any("error", err))
+				return
+			}
+			if len(samples) > 0 {
+				buf.append(samples)
+			}
+		})
+		af := audioFormat{
+			codec:      "lpcm",
+			sampleRate: lpcmFmt.SampleRate,
+			bitDepth:   lpcmFmt.BitDepth,
+			channels:   lpcmFmt.ChannelCount,
+		}
+		logger.Info("LPCM audio track set up",
+			slog.Int("bit_depth", af.bitDepth),
+			slog.Int("channels", af.channels),
+			slog.Int("sample_rate", af.sampleRate))
+		return af, nil
+	}
+
+	// ── G.711 µ-law / A-law fallback ────────────────────────────────────────
+	var g711Fmt *format.G711
+	medi := desc.FindFormat(&g711Fmt)
+	if medi == nil {
+		return audioFormat{}, fmt.Errorf(
+			"no supported audio format found in RTSP stream (supported: lpcm, g711 mu-law/a-law)")
+	}
+
+	rtpDec, err := g711Fmt.CreateDecoder()
+	if err != nil {
+		return audioFormat{}, fmt.Errorf("creating G.711 RTP decoder: %w", err)
+	}
+	if _, err := c.Setup(desc.BaseURL, medi, 0, 0); err != nil {
+		return audioFormat{}, fmt.Errorf("setting up G.711 audio track: %w", err)
+	}
+
+	// Select the codec-specific expander once at setup time so the RTP
+	// callback is branch-free on the hot path.
+	var expand func([]byte) []byte
+	codecName := "g711-alaw"
+	if g711Fmt.MULaw {
+		expand = g711.MulawToLPCM
+		codecName = "g711-ulaw"
+	} else {
+		expand = g711.AlawToLPCM
+	}
+
+	c.OnPacketRTP(medi, g711Fmt, func(pkt *rtp.Packet) {
+		raw, err := rtpDec.Decode(pkt)
+		if err != nil {
+			logger.Warn("G.711 decode error", slog.Any("error", err))
 			return
 		}
-		if len(samples) > 0 {
-			buf.append(samples)
+		if len(raw) > 0 {
+			buf.append(expand(raw)) // expand 8-bit log to 16-bit linear
 		}
 	})
 
 	af := audioFormat{
-		sampleRate: lpcmFmt.SampleRate,
-		bitDepth:   lpcmFmt.BitDepth,
-		channels:   lpcmFmt.ChannelCount,
+		codec:      codecName,
+		sampleRate: g711Fmt.SampleRate,
+		bitDepth:   16, // expanded to L16
+		channels:   g711Fmt.ChannelCount,
 	}
-	logger.Info("LPCM audio track set up",
-		slog.Int("bit_depth", af.bitDepth),
+	logger.Info("G.711 audio track set up",
+		slog.String("codec", codecName),
 		slog.Int("channels", af.channels),
 		slog.Int("sample_rate", af.sampleRate))
 	return af, nil
@@ -194,7 +257,7 @@ func startAudioFlusher(ctx context.Context, conf *Configuration, buf *audioBuffe
 				if len(data) == 0 {
 					continue
 				}
-				event := NewRTSPAudioEvent(ctx, data, conf.URL, af.sampleRate, af.bitDepth, af.channels)
+				event := NewRTSPAudioEvent(ctx, data, conf.URL, af.codec, af.sampleRate, af.bitDepth, af.channels)
 				select {
 				case output <- event:
 				case <-ctx.Done():

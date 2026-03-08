@@ -127,7 +127,7 @@ func TestNewRTSPAudioEvent(t *testing.T) {
 	audioData := []byte{0x00, 0x01, 0x02, 0x03}
 	url := "rtsp://cam/live"
 	ctx := context.Background()
-	e := NewRTSPAudioEvent(ctx, audioData, url, 44100, 16, 2)
+	e := NewRTSPAudioEvent(ctx, audioData, url, "lpcm", 44100, 16, 2)
 	if !bytes.Equal(e.GetBody(), audioData) {
 		t.Fatalf("body mismatch")
 	}
@@ -147,7 +147,7 @@ func TestNewRTSPAudioEvent(t *testing.T) {
 
 func TestNewRTSPAudioEvent_DefensiveCopy(t *testing.T) {
 	audioData := []byte{0x10, 0x20, 0x30}
-	e := NewRTSPAudioEvent(context.Background(), audioData, "rtsp://cam/live", 16000, 16, 1)
+	e := NewRTSPAudioEvent(context.Background(), audioData, "rtsp://cam/live", "lpcm", 16000, 16, 1)
 	audioData[0] = 0xFF
 	if e.GetBody()[0] == 0xFF {
 		t.Fatalf("RTSPAudioEvent should store a defensive copy of audio data")
@@ -155,13 +155,16 @@ func TestNewRTSPAudioEvent_DefensiveCopy(t *testing.T) {
 }
 
 func TestRTSPAudioEvent_Headers(t *testing.T) {
-	e := NewRTSPAudioEvent(context.Background(), []byte{}, "rtsp://cam/live", 48000, 16, 2)
+	e := NewRTSPAudioEvent(context.Background(), []byte{}, "rtsp://cam/live", "g711-ulaw", 48000, 16, 2)
 	headers := e.GetHeaders()
 	if headers["Content-Type"] != "audio/L16" {
 		t.Fatalf("expected Content-Type=audio/L16, got %q", headers["Content-Type"])
 	}
 	if headers["X-Source-URL"] != "rtsp://cam/live" {
 		t.Fatalf("expected X-Source-URL header, got %q", headers["X-Source-URL"])
+	}
+	if headers["X-Audio-Codec"] != "g711-ulaw" {
+		t.Fatalf("expected X-Audio-Codec=g711-ulaw, got %q", headers["X-Audio-Codec"])
 	}
 	if headers["X-Audio-Sample-Rate"] != "48000" {
 		t.Fatalf("expected X-Audio-Sample-Rate=48000, got %q", headers["X-Audio-Sample-Rate"])

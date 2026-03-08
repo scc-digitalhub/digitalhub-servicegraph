@@ -68,12 +68,13 @@ input:
 The MJPEG source emits events where `GetBody()` returns the JPEG bytes and `GetFrameNumber()` exposes the 1-based frame index.
 
 ### RTSP Source
-Connects to an RTSP server and emits either MJPEG video frames or LPCM audio chunks as events. The codec is auto-detected from the stream; an error is returned if no supported format is found. Supports automatic reconnection with exponential back-off.
+Connects to an RTSP server and emits either MJPEG video frames or LPCM/G.711 audio chunks as events. For audio, LPCM is preferred; G.711 µ-law/A-law is used as a fallback when LPCM is not present in the stream. G.711 samples are expanded to 16-bit linear PCM before being emitted. The codec is auto-detected from the stream; an error is returned if no supported format is found. Supports automatic reconnection with exponential back-off.
 
 **Configuration:**
 - `url` (string): RTSP stream address (required).
 - `media_type` (string): `"video"` or `"audio"` (required).
 - `frame_interval` (int): Emit one out of every N frames; 1 = all frames (video only, default: 1).
+- `jpeg_quality` (int): JPEG encoding quality for H.264 decoded frames, 1–100 (video only, default: 80).
 - `audio_max_size` (int): Maximum rolling audio buffer size in bytes (audio only, default: 1 048 576).
 - `audio_processing_interval` (int): Interval in ms at which the buffer is checked and a message emitted (audio only, default: 1000).
 - `audio_chunk_size` (int): When > 0, emit exactly this many bytes taken from the tail of the buffer per interval; 0 = emit a full buffer snapshot (audio only, default: 0).
@@ -88,6 +89,7 @@ input:
     url: "rtsp://camera.local/live"
     media_type: "video"
     frame_interval: 2
+    jpeg_quality: 75
 ```
 
 **Usage — audio:**
@@ -101,7 +103,7 @@ input:
     audio_processing_interval: 500
 ```
 
-Video events carry the JPEG bytes in `GetBody()` with `Content-Type: image/jpeg` and an `X-Frame-Number` header. Audio events carry raw LPCM bytes in `GetBody()` with `Content-Type: audio/L16`.
+Video events carry the JPEG bytes in `GetBody()` with `Content-Type: image/jpeg` and an `X-Frame-Number` header. Audio events carry raw LPCM bytes in `GetBody()` with `Content-Type: audio/L16` and the headers `X-Audio-Codec` (`lpcm`, `g711-ulaw`, or `g711-alaw`), `X-Audio-Sample-Rate`, `X-Audio-Bit-Depth`, and `X-Audio-Channels` set to the values reported by the stream.
 
 ## Sinks
 
