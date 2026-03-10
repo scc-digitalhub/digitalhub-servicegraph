@@ -266,7 +266,32 @@ func validateGraph(graph *model.Graph) error {
 			}
 		}
 	}
+	if err := validateNodeNamesUnique(graph.Flow); err != nil {
+		return err
+	}
 	return validateNode(graph.Flow)
+}
+
+// validateNodeNamesUnique checks that every named node in the flow tree has a
+// unique name, which is required for unambiguous parameter resolution.
+func validateNodeNamesUnique(flow *model.Node) error {
+	seen := map[string]bool{}
+	var check func(*model.Node) error
+	check = func(node *model.Node) error {
+		if node.Name != "" {
+			if seen[node.Name] {
+				return fmt.Errorf("duplicate node name %q in graph", node.Name)
+			}
+			seen[node.Name] = true
+		}
+		for i := range node.Nodes {
+			if err := check(&node.Nodes[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return check(flow)
 }
 
 func validateNode(node *model.Node) error {

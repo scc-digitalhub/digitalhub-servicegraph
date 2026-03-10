@@ -102,3 +102,268 @@ input: invalid: yaml: structure
 	_, err = reader.ReadYAML(bytes.NewReader([]byte(malformedYAML)))
 	assert.Error(t, err)
 }
+
+func TestReadYAMLWithParams_OverrideScalar(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+      config:
+        kind: "http"
+        spec:
+          url: "http://original"
+          method: "POST"
+`
+
+	params := map[string]string{
+		"input.port":   "9090",
+		"service1.url": "http://overridden",
+	}
+
+	graph, err := reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.NoError(t, err)
+	assert.NotNil(t, graph)
+
+	assert.EqualValues(t, int64(9090), graph.Input.Spec["port"])
+	assert.Equal(t, "http://overridden", graph.Flow.Nodes[0].Config.Spec["url"])
+}
+
+func TestReadYAMLWithParams_OverrideOutputSpec(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+output:
+  kind: "http"
+  spec:
+    url: "http://original-output"
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+`
+
+	params := map[string]string{
+		"output.url": "http://new-output",
+	}
+
+	graph, err := reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.NoError(t, err)
+	assert.Equal(t, "http://new-output", graph.Output.Spec["url"])
+}
+
+func TestReadYAMLWithParams_CreateMissingIntermediate(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec: {}
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+`
+
+	params := map[string]string{
+		"input.port": "8888",
+	}
+
+	graph, err := reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.NoError(t, err)
+	assert.EqualValues(t, int64(8888), graph.Input.Spec["port"])
+}
+
+func TestReadYAMLWithParams_EmptyParams(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+`
+
+	graph, err := reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), map[string]string{})
+	assert.NoError(t, err)
+	assert.EqualValues(t, int64(8080), graph.Input.Spec["port"])
+}
+
+func TestReadYAMLWithParams_BoolAndFloat(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+      config:
+        kind: "http"
+        spec:
+          threshold: 0.5
+          enabled: false
+`
+
+	params := map[string]string{
+		"service1.threshold": "0.99",
+		"service1.enabled":   "true",
+	}
+
+	graph, err := reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.NoError(t, err)
+	assert.EqualValues(t, float64(0.99), graph.Flow.Nodes[0].Config.Spec["threshold"])
+	assert.EqualValues(t, true, graph.Flow.Nodes[0].Config.Spec["enabled"])
+}
+
+func TestReadYAMLWithParams_UnknownNodeName(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+`
+
+	params := map[string]string{
+		"nonexistent.url": "http://oob",
+	}
+
+	_, err = reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.Error(t, err)
+}
+
+func TestReadYAMLWithParams_DuplicateNodeName(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "svc"
+      config:
+        kind: "http"
+        spec:
+          url: "http://first"
+    - type: "service"
+      name: "svc"
+      config:
+        kind: "http"
+        spec:
+          url: "http://second"
+`
+
+	params := map[string]string{
+		"svc.url": "http://overridden",
+	}
+
+	_, err = reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate node name")
+}
+
+func TestReadYAMLWithParams_NestedSpecPath(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+      config:
+        kind: "http"
+        spec:
+          headers:
+            Content-Type: "text/plain"
+`
+
+	params := map[string]string{
+		"service1.headers.Content-Type": "application/json",
+	}
+
+	graph, err := reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.NoError(t, err)
+	headers, ok := graph.Flow.Nodes[0].Config.Spec["headers"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "application/json", headers["Content-Type"])
+}
+
+func TestReadYAMLWithParams_MissingSection(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	// Graph has no output section, so output.url should fail
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+`
+
+	params := map[string]string{
+		"output.url": "http://missing-section",
+	}
+
+	_, err = reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.Error(t, err)
+}

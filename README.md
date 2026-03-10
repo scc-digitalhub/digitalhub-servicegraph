@@ -595,6 +595,109 @@ error:          # Optional error sink — receives events with status >= 400
     # ... sink config
 ```
 
+## Runtime Parameters
+
+Individual `spec` values in the configuration can be overridden at runtime without editing the YAML file. Pass one or more `key=value` arguments after the configuration path when starting the application.
+
+### Parameter Path Syntax
+
+Each parameter key is made up of two parts separated by a dot:
+
+```
+<section>.<spec-subpath>
+```
+
+| Section | Resolves to |
+|---------|-------------|
+| `input` | `input.spec` |
+| `output` | `output.spec` |
+| `error` | `error.spec` |
+| `<node-name>` | `config.spec` of the named service node |
+
+The `<spec-subpath>` is a dot-separated path within the target `spec` map. Nested maps are navigated with additional dots.
+
+> **Note:** Node names must be unique across the entire flow graph. The application rejects graphs with duplicate node names.
+
+### Value Type Coercion
+
+String values are automatically coerced to the most specific type in the following order: `int64`, `float64`, `bool`, `string`.
+
+| Example value | Resulting Go type |
+|---------------|------------------|
+| `"9090"` | `int64` |
+| `"0.95"` | `float64` |
+| `"true"` | `bool` |
+| `"http://…"` | `string` |
+
+### Usage
+
+```bash
+go run main.go <config.yaml> [key=value ...]
+# or with the compiled binary:
+./servicegraph <config.yaml> [key=value ...]
+```
+
+### Examples
+
+**Override the HTTP source port:**
+```bash
+./servicegraph config.yaml input.port=9090
+```
+
+**Point a service node at a different backend URL:**
+```bash
+./servicegraph config.yaml my-service.url=http://staging-backend:8000/api
+```
+
+**Override a nested spec field (e.g. a request header):**
+```bash
+./servicegraph config.yaml my-service.headers.Authorization="Bearer abc123"
+```
+
+**Override an output sink URL and the error sink URL simultaneously:**
+```bash
+./servicegraph config.yaml output.url=http://results:9000 error.url=http://errors:9001
+```
+
+**Change multiple settings across different nodes:**
+```bash
+./servicegraph pipeline.yaml \
+  input.port=8081 \
+  preprocessor.url=http://pre:5000/transform \
+  inference.address=triton:8001 \
+  inference.model_name=resnetv2 \
+  output.url=http://sink:9000/receive
+```
+
+Given a YAML graph like:
+```yaml
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  nodes:
+    - type: "service"
+      name: "inference"
+      config:
+        kind: "http"
+        spec:
+          url: "http://model:5000/predict"
+          method: "POST"
+output:
+  kind: "webhook"
+  spec:
+    url: "http://sink:9000/receive"
+```
+
+Running:
+```bash
+./servicegraph config.yaml input.port=9090 inference.url=http://model-v2:5000/predict output.url=http://new-sink:9000
+```
+
+…is equivalent to editing the YAML to use `port: 9090`, the new inference URL, and the new output URL before starting.
+
 ## Quick Start
 
 1. Create a configuration file (e.g., `config.yaml`):
@@ -608,6 +711,7 @@ flow:
   type: "sequence"
   nodes:
     - type: "service"
+      name: "backend-call"
       config:
         kind: "http"
         spec:
@@ -621,6 +725,12 @@ output:
 
 ```bash
 go run main.go <config.yaml>
+```
+
+You can override any `spec` value without editing the file by appending `key=value` pairs:
+
+```bash
+go run main.go config.yaml input.port=9090 backend-call.url=https://httpbin.org/anything
 ```
 
 If no configuration file is provided, the application will display usage instructions.
