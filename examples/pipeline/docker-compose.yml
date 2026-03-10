@@ -51,18 +51,19 @@ services:
       timeout: 5s
       retries: 12
       start_period: 15s      
-  # servicegraph:
-  #   image: ghcr.io/scc-digitalhub/digitalhub-servicegraph:0.1.0_b1
-  #   volumes:
-  #     - ./:/workspace
-  #   command: "/workspace/pipeline.yaml"
-  #   depends_on:
-  #     vqa:
-  #       condition: service_healthy
-  #     anonymization:
-  #       condition: service_healthy
-  #     go2rtc:
-  #       condition: service_started
+  # Commento for local testing without building the image
+  servicegraph:
+    image: ghcr.io/scc-digitalhub/digitalhub-servicegraph:0.1.0_b3
+    volumes:
+      - ./:/workspace
+    command: "/workspace/pipeline.yaml"
+    depends_on:
+      vqa:
+        condition: service_healthy
+      anonymization:
+        condition: service_healthy
+      go2rtc:
+        condition: service_started
 
 networks:
   default:
