@@ -34,11 +34,31 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run main.go <config.yaml>")
+		fmt.Println("Usage: go run main.go <config.yaml> [key=value ...]")
 		os.Exit(1)
 	}
 	configPath := os.Args[1]
-	simpleYaml(configPath)
+	params, err := parseParams(os.Args[2:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid parameter: %v\n", err)
+		os.Exit(1)
+	}
+	simpleYaml(configPath, params)
+}
+
+// parseParams converts a slice of "key=value" strings into a map.
+// The key must be a non-empty dot-separated path; values are passed as-is and
+// interpreted during YAML parameter application.
+func parseParams(args []string) (map[string]string, error) {
+	params := make(map[string]string, len(args))
+	for _, arg := range args {
+		idx := strings.IndexByte(arg, '=')
+		if idx < 1 {
+			return nil, fmt.Errorf("parameter %q must use key=value format", arg)
+		}
+		params[arg[:idx]] = arg[idx+1:]
+	}
+	return params, nil
 }
 
 // healthCheck probes the app's health endpoint and exits non-zero on failure.
@@ -82,7 +102,7 @@ func initLogger() {
 	slog.SetDefault(slog.New(h))
 }
 
-func simpleYaml(path string) {
+func simpleYaml(path string, params map[string]string) {
 	modelReader, _ := model.NewReader()
 
 	file, err := os.Open(path)
@@ -91,7 +111,7 @@ func simpleYaml(path string) {
 	}
 	defer file.Close()
 
-	graph, err := modelReader.ReadYAML(file)
+	graph, err := modelReader.ReadYAMLWithParams(file, params)
 	if err != nil {
 		panic(err)
 	}
