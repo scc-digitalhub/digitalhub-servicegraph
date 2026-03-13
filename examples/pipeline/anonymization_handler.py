@@ -6,6 +6,8 @@ and blurring faces (and optionally license plates). It integrates with the
 digitalhub-servicegraph framework for real-time video stream processing.
 """
 
+import os
+import time
 from urllib import request
 
 import numpy as np
@@ -115,7 +117,7 @@ def pixelate_region(image, x, y, w, h, pixel_size=15):
     return image
 
 
-def anonymize_image(context, model, image_bytes, method='blur', blur_factor=50, pixel_size=15):
+def anonymize_image(context, model, image_bytes, method='blur', blur_factor=50, pixel_size=15, draw_boxes=False):
     """
     Anonymize an image by detecting and obscuring faces.
     
@@ -141,10 +143,13 @@ def anonymize_image(context, model, image_bytes, method='blur', blur_factor=50, 
 
     # Anonymize each face
     for (x, y, w, h) in faces:
+        #context.logger.info(f"Face {x} {y} {w} {h}")
         if method == 'pixelate':
             image = pixelate_region(image, x, y, w, h, pixel_size)
         else:  # blur
             image = blur_region(image, x, y, w, h, blur_factor)
+        if draw_boxes:
+            cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
     
     # Convert back to bytes
     _, buffer = cv2.imencode('.jpg', image)
@@ -159,6 +164,8 @@ def handler(context, event):
         - method: 'blur' or 'pixelate' (default: blur)
         - blur_factor: Blur intensity (default: 50)
         - pixel_size: Pixelation size (default: 15)
+        - draw_boxes: Whether to draw bounding boxes around detected faces (default: False)
+        - store_files: Whether to save anonymized images to disk for debugging (default: False)
     
     Returns: Anonymized image bytes
     """
@@ -175,15 +182,28 @@ def handler(context, event):
         method = request.parameters['method'] if  request.parameters and 'method' in request.parameters else 'blur'
         blur_factor = int(request.parameters['blur_factor']) if request.parameters and 'blur_factor' in request.parameters else 50
         pixel_size = int(request.parameters['pixel_size']) if request.parameters and 'pixel_size' in request.parameters else 15
-        
+        draw_boxes = bool(request.parameters['draw_boxes'] == 'True') if request.parameters and 'draw_boxes' in request.parameters else False
+        store_files = bool(request.parameters['store_files'] == 'True') if request.parameters and 'store_files' in request.parameters else False
+
         # Validate method
         if method not in ['blur', 'pixelate']:
             return {"error": "Method must be 'blur' or 'pixelate'"}
         
         # Anonymize the image
         anonymized_bytes, face_count = anonymize_image(
-            context, model, image_bytes, method, blur_factor, pixel_size
+            context, model, image_bytes, method, blur_factor, pixel_size, draw_boxes
         )
+
+        # write anonymized image to disk for debugging 
+        # the image name has timestamp in UTC format to avoid overwriting files
+        if (face_count > 0) and store_files:
+            # check if exists the output directory, if not create it
+            if not os.path.exists("/workspace/output"):
+                os.makedirs("/workspace/output")
+            timestamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())   
+            output_filename = f"/workspace/output/anonymized_{timestamp}.jpg"
+            with open(output_filename, "wb") as f:
+                f.write(anonymized_bytes)
         
         context.logger.info(f"Anonymized {face_count} face(s) using {method} method")
 

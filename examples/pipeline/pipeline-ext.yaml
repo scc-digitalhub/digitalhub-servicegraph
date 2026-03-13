@@ -21,7 +21,12 @@ flow:
           address: "localhost:9002"
           model_name: "haar_face_cascade"
           num_instances: 4  
-          timeout: 10      
+          timeout: 10   
+          params:
+            method: "blur"
+            blur_factor: "75"
+            draw_boxes: "True"
+            store_files: "True"
 
           input_tensor_spec:
             - name: "image"
