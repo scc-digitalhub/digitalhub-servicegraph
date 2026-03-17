@@ -1,3 +1,3 @@
-FROM ghcr.io/scc-digitalhub/digitalhub-serverless/python-runtime:3.10-0.15.0b16
+FROM ghcr.io/scc-digitalhub/digitalhub-serverless/python-runtime:3.10-0.15.0b21
 
 RUN pip install opencv-python-headless==4.12.0.88 opencv-contrib-python-headless==4.12.0.88 numpy>=1.24.0 pillow>=10.0.0 requests>=2.31.0

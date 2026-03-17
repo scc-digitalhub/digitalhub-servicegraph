@@ -5,6 +5,8 @@ This microservice serves a BLIP model for visual question answering tasks.
 It accepts images (JPEG/PNG) and returns text descriptions.
 """
 
+import base64
+
 import numpy as np
 from io import BytesIO
 from PIL import Image
@@ -160,39 +162,8 @@ class RequestInput:
         self.datatype = kwargs.get("datatype")
         self.shape = kwargs.get("shape")
         self.data = kwargs.get("data")
-        self.parameters = kwargs.get("parameters")
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def __str__(self) -> str:
-        return f"RequestInput(name={self.name}, datatype={self.datatype}, shape={self.shape}, data={self.data}, parameters={self.parameters})"
-
-    def dict(self) -> dict:
-        return {
-            "name": self.name,
-            "datatype": self.datatype,
-            "shape": self.shape,
-            "data": self.data,
-            "parameters": self.parameters,
-        }
-
-    def json(self) -> str:
-        return json.dumps(self.dict())
-    
-
-class RequestInput:
-    name: str
-    datatype: str
-    shape: list[int]
-    data: list[any]
-    parameters: dict | None = {}
-
-    def __init__(self, **kwargs) -> None:
-        self.name = kwargs.get("name")
-        self.datatype = kwargs.get("datatype")
-        self.shape = kwargs.get("shape")
-        self.data = kwargs.get("data")
+        if self.datatype == "BYTES" and "data" in kwargs:
+            self.data = [base64.b64decode(d) for d in kwargs.get("data", [])]
         self.parameters = kwargs.get("parameters")
 
     def __repr__(self) -> str:

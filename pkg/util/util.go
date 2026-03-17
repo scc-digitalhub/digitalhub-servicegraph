@@ -5,6 +5,7 @@
 package util
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -26,13 +27,51 @@ var funcMap = template.FuncMap{
 	"tensor": tensorFunc,
 	// "string" function converts byte data to string, or formats other types as string
 	"string": func(v any) string {
+		s := ""
 		switch val := v.(type) {
 		case []byte:
-			return string(val)
+			s = string(val)
 		default:
-			return fmt.Sprintf("%v", val)
+			s = fmt.Sprintf("%v", val)
 		}
+		return "\"" + s + "\""
 	},
+	// "base64" function converts byte data to base64 string
+	"base64encode": func(v any) string {
+		s := ""
+		switch val := v.(type) {
+		case []byte:
+			s = base64Encode(val)
+		default:
+			s = base64Encode([]byte(fmt.Sprintf("%v", val)))
+		}
+		return "\"" + s + "\""
+	},
+	// "base64decode" function converts base64 string to byte data
+	"base64decode": func(v any) string {
+		s := ""
+		switch val := v.(type) {
+		case string:
+			s = base64Decode(val)
+		default:
+			s = base64Decode(fmt.Sprintf("%v", val))
+		}
+		return "\"" + s + "\""
+	},
+}
+
+func base64Encode(data []byte) string {
+	return strings.TrimRight(base64.StdEncoding.EncodeToString(data), "=")
+}
+
+func base64Decode(s string) string {
+	// Add padding if necessary
+	padding := len(s) % 4
+	if padding > 0 {
+		s += strings.Repeat("=", 4-padding)
+	}
+	data, _ := base64.StdEncoding.DecodeString(s)
+	return string(data)
 }
 
 func jpFunc(jsonPath string, jsonData any) (any, error) {
@@ -380,7 +419,10 @@ func ConvertElement(elem any, dataType string) []byte {
 			return []byte{0}
 		}
 	case "BYTES":
-		return elem.([]byte)
+		if b, ok := elem.([]byte); ok {
+			return b
+		}
+		return []byte(elem.(string))
 	case "UINT8":
 		if f, ok := elem.(float64); ok {
 			return []byte{byte(f)}

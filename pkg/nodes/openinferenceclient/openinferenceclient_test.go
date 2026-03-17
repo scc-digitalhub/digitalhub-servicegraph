@@ -430,7 +430,7 @@ func TestBuildInferRequest_WithModelVersion(t *testing.T) {
 
 func TestBuildInferRequest_WithParams(t *testing.T) {
 	conf := NewConfiguration("localhost:8001", "test-model")
-	conf.Params = map[string]string{
+	conf.Params = map[string]any{
 		"param1": "value1",
 		"param2": "value2",
 	}

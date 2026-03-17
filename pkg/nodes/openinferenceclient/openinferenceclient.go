@@ -432,12 +432,25 @@ func (oic *OpenInferenceClient) buildInferRequest(msg streams.Event) (*pb.ModelI
 	if oic.conf.Params != nil {
 		request.Parameters = make(map[string]*pb.InferParameter)
 		for key, value := range oic.conf.Params {
-			param := &pb.InferParameter{
-				ParameterChoice: &pb.InferParameter_StringParam{
-					StringParam: value,
-				},
+			if strVal, ok := value.(string); ok {
+				request.Parameters[key] = &pb.InferParameter{
+					ParameterChoice: &pb.InferParameter_StringParam{
+						StringParam: strVal,
+					},
+				}
+			} else if intVal, ok := value.(int); ok {
+				request.Parameters[key] = &pb.InferParameter{
+					ParameterChoice: &pb.InferParameter_Int64Param{
+						Int64Param: int64(intVal),
+					},
+				}
+			} else if boolVal, ok := value.(bool); ok {
+				request.Parameters[key] = &pb.InferParameter{
+					ParameterChoice: &pb.InferParameter_BoolParam{
+						BoolParam: boolVal,
+					},
+				}
 			}
-			request.Parameters[key] = param
 		}
 	}
 
@@ -555,14 +568,14 @@ func buildRESTRequestFromProto(req *pb.ModelInferRequest) *RESTInferRequest {
 			raw := req.RawInputContents[i]
 			// For BYTES, send base64 string in data array
 			if strings.ToUpper(in.Datatype) == "BYTES" {
-				input.Data = []interface{}{base64.StdEncoding.EncodeToString(raw)}
+				input.Data = []any{base64.StdEncoding.EncodeToString(raw)}
 			} else {
 				// Convert bytes to typed tensor values
 				if v, err := util.BytesToTensor(in.Datatype, raw); err == nil {
 					input.Data = convertToInterfaceSlice(v)
 				} else {
 					// fallback: send base64
-					input.Data = []interface{}{base64.StdEncoding.EncodeToString(raw)}
+					input.Data = []any{base64.StdEncoding.EncodeToString(raw)}
 				}
 			}
 		}

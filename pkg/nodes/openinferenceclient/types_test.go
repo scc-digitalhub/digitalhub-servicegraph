@@ -152,7 +152,7 @@ func TestConfiguration_AllFields(t *testing.T) {
 			{Name: "output", DataType: "FP32", Shape: []int64{1, 1000}},
 		},
 		Timeout: 60,
-		Params: map[string]string{
+		Params: map[string]any{
 			"key1": "value1",
 		},
 		InputTemplates: []InputTemplateSpec{

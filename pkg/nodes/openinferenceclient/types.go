@@ -19,7 +19,7 @@ type Configuration struct {
 	// ModelVersion is the version of the model (optional)
 	ModelVersion string `json:"model_version,omitempty"`
 	// Params are additional parameters to pass to the model
-	Params map[string]string `json:"params,omitempty"`
+	Params map[string]any `json:"params,omitempty"`
 	// NumInstances specifies the number of parallel worker goroutines
 	NumInstances int `json:"num_instances,omitempty"`
 	// InputTensorSpec defines how to convert input data to tensors

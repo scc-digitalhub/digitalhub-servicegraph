@@ -24,9 +24,9 @@ flow:
           timeout: 10   
           params:
             method: "blur"
-            blur_factor: "75"
-            draw_boxes: "False"
-            store_files: "False"
+            blur_factor: 75
+            draw_boxes: false
+            store_files: false
 
           input_tensor_spec:
             - name: "image"

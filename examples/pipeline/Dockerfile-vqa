@@ -1,4 +1,4 @@
-FROM ghcr.io/scc-digitalhub/digitalhub-serverless/python-runtime:3.10-0.15.0b16
+FROM ghcr.io/scc-digitalhub/digitalhub-serverless/python-runtime:3.10-0.15.0b21
 
 RUN pip install torch>=2.0.0 transformers>=4.30.0 pillow>=10.0.0
 

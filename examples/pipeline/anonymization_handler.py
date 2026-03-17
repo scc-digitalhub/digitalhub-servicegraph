@@ -6,6 +6,7 @@ and blurring faces (and optionally license plates). It integrates with the
 digitalhub-servicegraph framework for real-time video stream processing.
 """
 
+import base64
 import os
 import time
 from urllib import request
@@ -176,14 +177,15 @@ def handler(context, event):
             
     try:
         # Get image from request body
-        image_bytes = bytes(request.inputs[0].data)
+        data = request.inputs[0].data[0] if request.inputs[0].datatype == "BYTES" else request.inputs[0].data
+        image_bytes = bytes(data)
             
         # Get parameters
         method = request.parameters['method'] if  request.parameters and 'method' in request.parameters else 'blur'
         blur_factor = int(request.parameters['blur_factor']) if request.parameters and 'blur_factor' in request.parameters else 50
         pixel_size = int(request.parameters['pixel_size']) if request.parameters and 'pixel_size' in request.parameters else 15
-        draw_boxes = bool(request.parameters['draw_boxes'] == 'True') if request.parameters and 'draw_boxes' in request.parameters else False
-        store_files = bool(request.parameters['store_files'] == 'True') if request.parameters and 'store_files' in request.parameters else False
+        draw_boxes = bool(request.parameters['draw_boxes']) if request.parameters and 'draw_boxes' in request.parameters else False
+        store_files = bool(request.parameters['store_files']) if request.parameters and 'store_files' in request.parameters else False
 
         # Validate method
         if method not in ['blur', 'pixelate']:
@@ -267,6 +269,8 @@ class RequestInput:
         self.datatype = kwargs.get("datatype")
         self.shape = kwargs.get("shape")
         self.data = kwargs.get("data")
+        if self.datatype == "BYTES" and "data" in kwargs:
+            self.data = [base64.b64decode(d) for d in kwargs.get("data", [])]
         self.parameters = kwargs.get("parameters")
 
     def __repr__(self) -> str:
@@ -286,40 +290,6 @@ class RequestInput:
 
     def json(self) -> str:
         return json.dumps(self.dict())
-    
-
-class RequestInput:
-    name: str
-    datatype: str
-    shape: list[int]
-    data: list[any]
-    parameters: dict | None = {}
-
-    def __init__(self, **kwargs) -> None:
-        self.name = kwargs.get("name")
-        self.datatype = kwargs.get("datatype")
-        self.shape = kwargs.get("shape")
-        self.data = kwargs.get("data")
-        self.parameters = kwargs.get("parameters")
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def __str__(self) -> str:
-        return f"RequestInput(name={self.name}, datatype={self.datatype}, shape={self.shape}, data={self.data}, parameters={self.parameters})"
-
-    def dict(self) -> dict:
-        return {
-            "name": self.name,
-            "datatype": self.datatype,
-            "shape": self.shape,
-            "data": self.data,
-            "parameters": self.parameters,
-        }
-
-    def json(self) -> str:
-        return json.dumps(self.dict())
-
 
 class RequestOutput:
     name: str
