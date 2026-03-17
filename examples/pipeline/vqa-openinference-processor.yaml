@@ -18,10 +18,10 @@ spec:
         grpc_port: 9000
         input_tensors:
           - name: "image"
-            data_type: "UINT8"
+            datatype: "UINT8"
             shape: [-1, -1]
         output_tensors:
           - name: "caption"
-            data_type: "BYTES"
+            datatype: "BYTES"
             shape: [-1, -1]
       max_workers: 4
