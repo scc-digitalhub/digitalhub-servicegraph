@@ -124,7 +124,7 @@ func (b *audioBuffer) latestChunk(chunkSize int) []byte {
 	return chunk
 }
 
-func convertBigEndianToLittleEndian(in []byte, logger *slog.Logger) []byte {
+func convertBigEndianToLittleEndian(in []byte) []byte {
 	out := make([]byte, len(in))
 	for i := 0; i+1 < len(in); i += 2 {
 		v := binary.BigEndian.Uint16(in[i:])
@@ -166,7 +166,7 @@ func setupAudioTrack(conf *Configuration, c *gortsplib.Client,
 		}
 		c.OnPacketRTP(medi, lpcmFmt, func(pkt *rtp.Packet) {
 			samples, err := rtpDec.Decode(pkt)
-			samples = convertBigEndianToLittleEndian(samples, logger)
+			samples = convertBigEndianToLittleEndian(samples)
 			if err != nil {
 				logger.Warn("LPCM decode error", slog.Any("error", err))
 				return
