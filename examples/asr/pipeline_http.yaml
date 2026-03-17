@@ -1,0 +1,32 @@
+input:
+  kind: "rtsp"
+  spec:
+    url: "rtsp://go2rtc:8554/mystream"
+    media_type: "audio"
+    audio_chunk_size: 0
+    audio_processing_interval: 2000
+
+output:
+  kind: "stdout"
+  spec: {}
+
+flow:
+  type: "sequence"
+  name: "asr-pipeline"
+  nodes:
+    - type: "service"
+      name: "asr-service"
+      config:
+        kind: "http"
+        spec:
+          # ASR service endpoint
+          url: "http://asr:8081/transcribe"
+          method: "POST"
+          # headers:
+          #   Content-Type: "image/jpeg"
+          
+          # Template to extract caption from response
+          # The VQA service returns JSON: {"caption": "...", "status": "success"}
+          # output_template: "Caption: {{ . | jp \"$.caption\"}}"
+          output_template: "transcription: {{ . | json }}"
+

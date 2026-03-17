@@ -6,6 +6,7 @@ package rtsp
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	gortsplib "github.com/bluenviron/gortsplib/v4"
 	"github.com/bluenviron/gortsplib/v4/pkg/description"
 	"github.com/bluenviron/gortsplib/v4/pkg/format"
+
 	"github.com/pion/rtp"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/rtsp/g711"
@@ -122,6 +124,15 @@ func (b *audioBuffer) latestChunk(chunkSize int) []byte {
 	return chunk
 }
 
+func convertBigEndianToLittleEndian(in []byte, logger *slog.Logger) []byte {
+	out := make([]byte, len(in))
+	for i := 0; i+1 < len(in); i += 2 {
+		v := binary.BigEndian.Uint16(in[i:])
+		binary.LittleEndian.PutUint16(out[i:], v)
+	}
+	return out
+}
+
 // audioFormat holds the PCM encoding parameters discovered during track setup.
 // They are forwarded to every RTSPAudioEvent so downstream nodes can interpret
 // the payload.  bitDepth is always 16 (the expanded L16 representation);
@@ -155,6 +166,7 @@ func setupAudioTrack(conf *Configuration, c *gortsplib.Client,
 		}
 		c.OnPacketRTP(medi, lpcmFmt, func(pkt *rtp.Packet) {
 			samples, err := rtpDec.Decode(pkt)
+			samples = convertBigEndianToLittleEndian(samples, logger)
 			if err != nil {
 				logger.Warn("LPCM decode error", slog.Any("error", err))
 				return
