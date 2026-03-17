@@ -25,8 +25,8 @@ flow:
           params:
             method: "blur"
             blur_factor: "75"
-            draw_boxes: "True"
-            store_files: "True"
+            draw_boxes: "False"
+            store_files: "False"
 
           input_tensor_spec:
             - name: "image"
