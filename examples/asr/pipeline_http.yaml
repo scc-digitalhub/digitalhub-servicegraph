@@ -22,11 +22,5 @@ flow:
           # ASR service endpoint
           url: "http://asr:8081/transcribe"
           method: "POST"
-          # headers:
-          #   Content-Type: "image/jpeg"
-          
-          # Template to extract caption from response
-          # The VQA service returns JSON: {"caption": "...", "status": "success"}
-          # output_template: "Caption: {{ . | jp \"$.caption\"}}"
           output_template: "transcription: {{ . | json }}"
 
