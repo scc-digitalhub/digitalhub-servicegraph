@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  object-detection:
+    build:
+      context: .
+      dockerfile: Dockerfile-obj-det
+    image: object-detection:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8081
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8081/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+  image-cropper:
+    build:
+      context: .
+      dockerfile: Dockerfile-img-crop
+    image: image-cropper:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8082
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8082/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+  dog-breed-classifier:
+    build:
+      context: .
+      dockerfile: Dockerfile-dog-breed
+    image: dog-breed-classifier:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8083
+    ports:
+      - "8083:8083"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8083/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+      
+networks:
+  default:
+    driver: bridge
