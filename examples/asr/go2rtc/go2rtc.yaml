@@ -1,0 +1,3 @@
+streams:
+  mystream:
+    - ffmpeg:/config/male_0_kmh.mp3#audio=pcml/16000

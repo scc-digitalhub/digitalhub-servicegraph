@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  go2rtc:
+    image: alexxit/go2rtc
+    privileged: true         # only for FFmpeg hardware transcoding
+    restart: unless-stopped  # autorestart on fail or config change from WebUI
+    volumes:
+      # - "./config:/config"  
+      - "./go2rtc:/config"  
+    ports:
+      - "1985:1984"
+      - "8554:8554"
+  asr:
+    build:
+      context: .
+      dockerfile: Dockerfile-asr
+    image: asr-test:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8081/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+  # servicegraph:
+  #   image: ghcr.io/scc-digitalhub/digitalhub-servicegraph:0.1.0_b3
+  #   volumes:
+  #     - ./:/workspace
+  #   command: "/workspace/pipeline_http.yaml"
+  #   depends_on:
+  #     asr:
+  #       condition: service_healthy
+  #     go2rtc:
+  #       condition: service_started
+      
+networks:
+  default:
+    driver: bridge
