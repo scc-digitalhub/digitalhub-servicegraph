@@ -1,0 +1,69 @@
+input:
+  kind: "http"
+  spec:
+    port: 8080
+    read_timeout: 10
+
+flow:
+  type: "sequence"
+  name: "object-detection-workflow"
+  nodes:
+    - type: "service"
+      name: "object-detection"
+      config:
+        kind: "http"
+        spec:
+          url: "http://localhost:8081/detect"
+          method: "POST"
+          headers:
+            Content-Type: "image/jpeg"
+          num_instances: 2
+
+    - type: "service"
+      name: "image-cropper"
+      config:
+        kind: "http"
+        spec:
+          url: "http://localhost:8082/crop"
+          method: "POST"
+          headers:
+            Content-Type: "application/json"
+          num_instances: 2
+          input_template: |
+            {
+              "image_b64": {{ . | jp "$.image_b64" | json }},
+              "boxes": {{ . | jp "$.detections" | json }}
+            }
+          output_template: |
+            {
+              "status": {{ . | jp "$.status" | json }},
+              "count": {{ . | jp "$.count" | json }},
+              "original_image_b64": {{ . | jp "$.original_image_b64" | json }},
+              "detections": {{ . | jp "$.classification_metadata" | json }},
+              "crops_b64": {{ . | jp "$.classification_inputs[*].image_b64" | json }}
+            }
+
+    - type: "service"
+      name: "dog-breed-classifier"
+      config:
+        kind: "http"
+        spec:
+          url: "http://localhost:8083/predict"
+          method: "POST"
+          headers:
+            Content-Type: "application/json"
+          params:
+            top_k: "3"
+          num_instances: 2
+          input_template: |
+            {
+              "images_b64": {{ . | jp "$.crops_b64" | json }},
+              "detections": {{ . | jp "$.detections" | json }},
+              "original_image_b64": {{ . | jp "$.original_image_b64" | json }}
+            }
+
+output:
+  kind: "stdout"
+
+error:
+  kind: "errorlog"

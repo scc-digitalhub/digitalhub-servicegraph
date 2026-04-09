@@ -1,0 +1,13 @@
+FROM python:3.10-slim
+
+WORKDIR /workspace
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+	PYTHONUNBUFFERED=1
+
+RUN pip install --no-cache-dir \
+	"flask>=2.3.0" \
+	"pillow>=10.0.0" \
+	"requests>=2.31.0"
+
+CMD ["python", "image_crop_server.py"]
