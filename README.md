@@ -150,6 +150,24 @@ output:
       Authorization: "Bearer token"
 ```
 
+### MJPEG Sink
+Exposes an HTTP endpoint that serves a live [MJPEG](https://en.wikipedia.org/wiki/Motion_JPEG) stream. Each incoming event is expected to carry a raw JPEG image as its body (`[]byte` or `streams.Event`). Any number of clients can connect to the endpoint simultaneously and receive the stream in real time.
+
+**Configuration:**
+- `port` (int): TCP port the HTTP server listens on (default: `8090`)
+- `path` (string): HTTP path that serves the MJPEG stream (default: `"/stream"`)
+
+**Usage:**
+```yaml
+output:
+  kind: "mjpeg"
+  spec:
+    port: 8090
+    path: "/stream"
+```
+
+The endpoint is accessible at `http://<host>:<port><path>` and can be opened directly in most browsers or consumed by any MJPEG-capable client (e.g., `ffplay`, VLC, or an `<img>` tag with the stream URL as `src`). Slow clients receive dropped frames rather than stalling the pipeline.
+
 ### Stdout Sink
 Writes processed data to standard output.
 

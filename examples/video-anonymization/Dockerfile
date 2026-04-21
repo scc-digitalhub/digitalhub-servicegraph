@@ -11,11 +11,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create models directory and download DNN face detection models
-RUN mkdir -p models && cd models && \
-    curl -L -o deploy.prototxt \
-    https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/face_detector/deploy.prototxt && \
-    curl -L -o res10_300x300_ssd_iter_140000.caffemodel \
-    https://raw.githubusercontent.com/opencv/opencv_3rdparty/dnn_samples_face_detector_20170830/res10_300x300_ssd_iter_140000.caffemodel
+# RUN mkdir -p models && cd models && \
+#     curl -L -o deploy.prototxt \
+#     https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/face_detector/deploy.prototxt && \
+#     curl -L -o res10_300x300_ssd_iter_140000.caffemodel \
+#     https://raw.githubusercontent.com/opencv/opencv_3rdparty/dnn_samples_face_detector_20170830/res10_300x300_ssd_iter_140000.caffemodel
 
 # Copy application code
 COPY anonymization_service.py .

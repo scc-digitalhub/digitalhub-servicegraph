@@ -9,6 +9,7 @@ import (
 
 	// ensure subpackages register their converters
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/base"
+	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/mjpeg"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/webhook"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sinks/websocket"
 

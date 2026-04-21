@@ -17,7 +17,7 @@ input:
     # - IP camera: "http://camera-ip:8080/video"
     # - Local Motion: "http://localhost:8081/"
     # - Test stream: "http://localhost:8080/?action=stream"
-    url: "http://localhost:1984/api/stream.mjpeg?src=camera"
+    url: "http://localhost:1984/api/stream.mjpeg?src=example"
     
     # Process every Nth frame to reduce processing load
     # Higher values = lower processing rate but less resource usage
@@ -26,11 +26,16 @@ input:
     # Timeout in seconds
     read_timeout: 30
 
+# output:
+#   kind: "folder"
+#   spec:
+#     folder_path: "./output/anonymized_frames"
+#     filename_pattern: "frame_{timestamp_ms}_{counter}.jpg"
 output:
-  kind: "folder"
+  kind: "mjpeg"
   spec:
-    folder_path: "./output/anonymized_frames"
-    filename_pattern: "frame_{timestamp_ms}_{counter}.jpg"
+    port: 7777
+    path: "/stream"
 
 flow:
   type: "sequence"
