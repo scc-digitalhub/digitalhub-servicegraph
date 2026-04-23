@@ -152,11 +152,11 @@ Use run arguments with the `outputs.<kind>.<subpath>` syntax to override any fie
 
 ```bash
 # Enable the stdout sink at startup without editing the YAML
-servicegraph -p "outputs.stdout.enabled=true" pipeline.yaml
+servicegraph "outputs.stdout.enabled=true" pipeline.yaml
 
 # Override the webhook URL and enable it
-servicegraph -p "outputs.webhook.enabled=true" \
-             -p "outputs.webhook.url=https://staging.example.com/hook" \
+servicegraph "outputs.webhook.enabled=true" \
+             "outputs.webhook.url=https://staging.example.com/hook" \
              pipeline.yaml
 ```
 
@@ -682,6 +682,8 @@ Each parameter key is made up of two parts separated by a dot:
 |---------|-------------|
 | `input` | `input.spec` |
 | `output` | `output.spec` |
+| `outputs.<kind>.enabled` | `outputs.<kind>.enabled` | 
+| `outputs.<kind>.<path>` | `outputs.<kind>.spec.<path>` | 
 | `error` | `error.spec` |
 | `<node-name>` | `config.spec` of the named service node |
 
