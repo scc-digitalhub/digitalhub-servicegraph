@@ -57,7 +57,7 @@ func (s *slowFactory) GenerateFlow(source streams.Source, sink streams.Sink) {
 }
 
 func TestNewConfigurationDefaults(t *testing.T) {
-	c := NewConfiguration(0, 0, 0, 0, 0)
+	c := NewConfiguration(-1, 0, 0, 0, 0)
 	if c.Port == 0 {
 		t.Fatalf("expected default port to be set")
 	}

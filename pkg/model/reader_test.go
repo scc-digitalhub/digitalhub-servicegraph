@@ -547,3 +547,59 @@ outputs:
 	_, err = reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
 	assert.Error(t, err)
 }
+
+func TestReadYAML_EnvVarInterpolation(t *testing.T) {
+	t.Setenv("SG_TEST_HOST", "example.com")
+	t.Setenv("SG_TEST_PORT", "8081")
+
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	yamlIn := `
+input:
+  kind: "http"
+  spec:
+    url: "http://${SG_TEST_HOST}:${SG_TEST_PORT}/path"
+    timeout: "${SG_TEST_TIMEOUT:-30}"
+    retain: "$${SG_TEST_RETAIN}"
+flow:
+  type: "sequence"
+  name: "f"
+  nodes: []
+output:
+  kind: "http"
+  spec:
+    url: "http://out"
+`
+	graph, err := reader.ReadYAML(bytes.NewReader([]byte(yamlIn)))
+	assert.NoError(t, err)
+	assert.NotNil(t, graph)
+	assert.Equal(t, "http://example.com:8081/path", graph.Input.Spec["url"])
+	assert.Equal(t, "30", graph.Input.Spec["timeout"])
+	// Escaped $${...} should remain as ${...}
+	assert.Equal(t, "${SG_TEST_RETAIN}", graph.Input.Spec["retain"])
+}
+
+func TestReadYAML_EnvVarUnsetWithoutDefault(t *testing.T) {
+	// Ensure variable is not set.
+	t.Setenv("SG_TEST_UNSET", "")
+	reader, _ := NewReader()
+	yamlIn := `
+input:
+  kind: "http"
+  spec:
+    url: "${SG_TEST_UNSET}"
+flow:
+  type: "sequence"
+  name: "f"
+  nodes: []
+output:
+  kind: "http"
+  spec:
+    url: "http://out"
+`
+	graph, err := reader.ReadYAML(bytes.NewReader([]byte(yamlIn)))
+	assert.NoError(t, err)
+	// Unset variable with no default → placeholder is preserved.
+	assert.Equal(t, "${SG_TEST_UNSET}", graph.Input.Spec["url"])
+}

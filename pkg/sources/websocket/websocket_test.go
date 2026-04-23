@@ -6,6 +6,7 @@ package websocket_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func (f *testFactory) GenerateFlow(source streams.Source, sink streams.Sink) {
 }
 
 func TestNewConfigurationDefaults(t *testing.T) {
-	c := wspkg.NewConfiguration(0, 0)
+	c := wspkg.NewConfiguration(-1, 0)
 	if c.Port == 0 {
 		t.Fatalf("expected default port to be set")
 	}
@@ -99,8 +100,8 @@ func TestWebSocketProcessorValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	// Invalid port
-	input.Spec["port"] = 0
+	// Invalid port (0 is now valid → OS-assigned; -1 is invalid)
+	input.Spec["port"] = -1
 	err = processor.Validate(input)
 	if err == nil {
 		t.Fatalf("expected error for invalid port")
@@ -141,14 +142,26 @@ func TestWebSocketProcessorConvert(t *testing.T) {
 func TestWSSource(t *testing.T) {
 	testLock.Lock()
 	defer testLock.Unlock()
-	conf := wspkg.NewConfiguration(8080, 10)
+	conf := wspkg.NewConfiguration(0, 10) // OS-assigned port
 	src := wspkg.NewWSSource(conf)
 	eventChan := make(chan any, 10)
 	factory := &testFactory{eventChan: eventChan}
 	go src.Start(factory)
-	time.Sleep(100 * time.Millisecond)
+	// Wait until the listener is bound and we have a real port.
+	var port int
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if p := src.Port(); p > 0 {
+			port = p
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if port == 0 {
+		t.Fatalf("server failed to bind")
+	}
 	dialer := websocket.DefaultDialer
-	conn, _, err := dialer.Dial("ws://localhost:8080/ws", nil)
+	conn, _, err := dialer.Dial(fmt.Sprintf("ws://localhost:%d/ws", port), nil)
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}

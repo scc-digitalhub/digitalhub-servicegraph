@@ -769,6 +769,84 @@ Running:
 
 …is equivalent to editing the YAML to use `port: 9090`, the new inference URL, and the new output URL before starting.
 
+## Environment Variable Interpolation
+
+YAML configurations support shell-style environment variable substitution that is applied **before** parsing, so any value (string, number, port, URL, header, …) can be sourced from the process environment.
+
+| Syntax | Behaviour |
+|--------|-----------|
+| `${VAR}` | Replaced with the value of `VAR`. If `VAR` is unset or empty, the placeholder is left untouched so YAML parsing remains predictable. |
+| `${VAR:-default}` | Replaced with the value of `VAR`, or with `default` when `VAR` is unset or empty. |
+| `$${VAR}` | Escape — emits a literal `${VAR}` without expansion. |
+
+Variable names must start with a letter or underscore and may contain letters, digits and underscores.
+
+**Example:**
+
+```yaml
+input:
+  kind: "http"
+  spec:
+    port: ${SG_HTTP_PORT:-8080}
+flow:
+  type: "service"
+  name: "inference"
+  config:
+    kind: "http"
+    spec:
+      url: "http://${MODEL_HOST}:${MODEL_PORT:-5000}/predict"
+      headers:
+        Authorization: "Bearer ${MODEL_API_KEY}"
+output:
+  kind: "webhook"
+  spec:
+    url: "${WEBHOOK_URL}"
+```
+
+Environment interpolation runs first; runtime `key=value` parameters (see [Runtime Parameters](#runtime-parameters)) are applied afterwards and therefore always win.
+
+## Strict Configuration Validation
+
+Each plugin's `spec` block is validated against its typed Go configuration with **unknown fields rejected**. A misspelled or unsupported key fails fast at startup with a clear error rather than being silently ignored:
+
+```text
+failed to validate input spec: json: unknown field "retry_backoff_ms"
+```
+
+This applies to every source, sink, and service-node configuration.
+
+## Operations
+
+### Graceful shutdown
+
+The application listens for `SIGINT` and `SIGTERM`. On either signal it cancels the application context, which asks the active source to stop accepting new requests, drains in-flight events through the flow and any enabled sinks, and flushes the error sink before exiting.
+
+### Health endpoint
+
+A lightweight HTTP server is started alongside the flow:
+
+| Path | Description |
+|------|-------------|
+| `GET /health` | Returns `{"status":"ok"}` when the process is up. |
+| `GET /debug/vars` | Standard Go [`expvar`](https://pkg.go.dev/expvar) handler exposing process and Service Graph counters as JSON. |
+
+The listening port is controlled by the `HEALTH_PORT` environment variable (default `8090`). Set `HEALTH_PORT=0` (or `disabled`) to skip starting the health server, which is required when running multiple App instances in parallel (e.g. integration tests).
+
+### Metrics
+
+The following counters are exposed via `/debug/vars`:
+
+| Variable | Meaning |
+|----------|---------|
+| `servicegraph_events_err_total` | Number of events routed to the error sink (status ≥ 400). |
+| `servicegraph_multisink_drops_total` | Number of events dropped by the multi-output fan-out because a downstream sink's per-sink buffer was full. A non-zero value indicates a slow or stuck sink. |
+
+Standard Go runtime variables (`memstats`, `cmdline`, …) are also available on the same endpoint.
+
+### Multi-output back-pressure
+
+When several sinks are enabled (see [Configuring outputs](#configuring-outputs)), each downstream sink is fed through its own bounded buffer (256 events). If a sink falls behind, new events for **that sink only** are dropped and counted; other sinks and the upstream pipeline are not blocked. A summary is logged when the multi-sink shuts down, and the running total is also visible in `servicegraph_multisink_drops_total`.
+
 ## Quick Start
 
 1. Create a configuration file (e.g., `config.yaml`):

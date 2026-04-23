@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -36,6 +38,8 @@ func (r *Reader) ReadYAML(reader io.Reader) (*Graph, error) {
 		return nil, err
 	}
 
+	bodyBytes = expandEnvVars(bodyBytes)
+
 	if err := yaml.Unmarshal(bodyBytes, &graph); err != nil {
 		return nil, err
 	}
@@ -53,6 +57,8 @@ func (r *Reader) ReadYAMLWithParams(reader io.Reader, params map[string]string) 
 	if err != nil {
 		return nil, err
 	}
+
+	bodyBytes = expandEnvVars(bodyBytes)
 
 	// Unmarshal into a raw map so individual fields can be overwritten before
 	// the final unmarshal into the typed Graph struct.
@@ -294,4 +300,42 @@ func inferValue(s string) any {
 		return b
 	}
 	return s
+}
+
+// envVarPattern matches ${VAR} and ${VAR:-default} placeholders. The variable
+// name must start with a letter or underscore and may contain letters, digits
+// and underscores. The default form ${VAR:-default} is used when the variable
+// is unset or empty; the default value may contain any characters except '}'.
+var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}`)
+
+// expandEnvVars replaces ${VAR} and ${VAR:-default} placeholders in the input
+// bytes with the value of the corresponding OS environment variable. When the
+// variable is unset (or empty) and no default is provided the placeholder is
+// left untouched so YAML parsing remains predictable. Use $${...} to emit a
+// literal ${...} sequence without expansion.
+func expandEnvVars(in []byte) []byte {
+	if len(in) == 0 {
+		return in
+	}
+	// Handle escape: $${...} → ${...} (no expansion). We replace with a
+	// sentinel that cannot collide with a real env-var name, expand, then
+	// restore.
+	const escSentinel = "\x00ESCAPED_DOLLAR\x00"
+	src := strings.ReplaceAll(string(in), "$${", escSentinel+"{")
+
+	out := envVarPattern.ReplaceAllStringFunc(src, func(match string) string {
+		groups := envVarPattern.FindStringSubmatch(match)
+		name := groups[1]
+		def := groups[2]
+		if val, ok := os.LookupEnv(name); ok && val != "" {
+			return val
+		}
+		if def != "" || (len(groups) > 2 && strings.Contains(match, ":-")) {
+			return def
+		}
+		return match
+	})
+
+	out = strings.ReplaceAll(out, escSentinel, "$")
+	return []byte(out)
 }

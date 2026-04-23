@@ -5,11 +5,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/app"
@@ -105,21 +108,35 @@ func initLogger() {
 }
 
 func simpleYaml(path string, params map[string]string) {
-	modelReader, _ := model.NewReader()
+	modelReader, err := model.NewReader()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create model reader: %v\n", err)
+		os.Exit(1)
+	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "failed to open config %s: %v\n", path, err)
+		os.Exit(1)
 	}
 	defer file.Close()
 
 	graph, err := modelReader.ReadYAMLWithParams(file, params)
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "failed to parse config: %v\n", err)
+		os.Exit(1)
 	}
-	app, err := app.NewApp(*graph)
+	a, err := app.NewApp(*graph)
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "failed to build app: %v\n", err)
+		os.Exit(1)
 	}
-	app.Run()
+	// Tie the App's lifetime to OS signals (SIGINT/SIGTERM) so that the
+	// configured source can shut down gracefully (see sources.Stoppable).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := a.RunWithContext(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "app exited with error: %v\n", err)
+		os.Exit(1)
+	}
 }

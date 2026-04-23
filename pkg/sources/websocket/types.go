@@ -67,7 +67,7 @@ func NewConfiguration(port int, capacity int) *Configuration {
 		Port:     port,
 		Capacity: capacity,
 	}
-	if port == 0 {
+	if port < 0 {
 		newConfiguration.Port = defaultServerPort
 	}
 	if capacity == 0 {

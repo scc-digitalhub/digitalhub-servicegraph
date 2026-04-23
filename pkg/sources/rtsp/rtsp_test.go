@@ -357,11 +357,11 @@ func TestRTSPSourceProcessor_Validate(t *testing.T) {
 		{
 			name: "valid video with extra fields",
 			spec: map[string]interface{}{
-				"url":              "rtsp://cam/live",
-				"media_type":       "video",
-				"frame_interval":   2,
-				"max_retries":      3,
-				"retry_backoff_ms": 500,
+				"url":            "rtsp://cam/live",
+				"media_type":     "video",
+				"frame_interval": 2,
+				"max_retries":    3,
+				"retry_backoff":  500,
 			},
 			wantErr: false,
 		},

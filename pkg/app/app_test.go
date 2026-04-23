@@ -7,6 +7,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,26 @@ import (
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/http"
 	_ "github.com/scc-digitalhub/digitalhub-servicegraph/pkg/sources/websocket"
 )
+
+// TestMain disables the global health server so that the multiple App
+// instances spun up in integration tests do not all try to bind the same port.
+func TestMain(m *testing.M) {
+	os.Setenv("HEALTH_PORT", "0")
+	os.Exit(m.Run())
+}
+
+// waitForPort polls until the App's source is listening on a non-zero port,
+// or returns 0 if the timeout elapses.
+func waitForPort(a *App, timeout time.Duration) int {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if p := a.SourcePort(); p > 0 {
+			return p
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return 0
+}
 
 type mockSource struct {
 	out chan any
@@ -372,8 +393,8 @@ func TestIntegration_SimpleHTTPSync(t *testing.T) {
 	graph, err := reader.ReadYAML(file)
 	assert.NoError(t, err)
 
-	// Modify port and URL to use mock server
-	graph.Input.Spec["port"] = 8081
+	// Use OS-assigned port to avoid clashes when tests run in parallel.
+	graph.Input.Spec["port"] = 0
 	graph.Flow.Nodes[0].Config.Spec["url"] = mockServer.URL
 
 	app, err := NewApp(*graph)
@@ -388,11 +409,11 @@ func TestIntegration_SimpleHTTPSync(t *testing.T) {
 		done <- app.Run()
 	}()
 
-	// Wait a bit for server to start
-	time.Sleep(2 * time.Second)
+	port := waitForPort(app, 5*time.Second)
+	assert.NotZero(t, port, "server failed to bind")
 
 	// Send HTTP request
-	resp, err := http.Post("http://localhost:8081", "text/plain", bytes.NewReader([]byte("test message")))
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d", port), "text/plain", bytes.NewReader([]byte("test message")))
 	assert.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -435,8 +456,8 @@ func TestIntegration_SimpleHTTPAsync(t *testing.T) {
 	graph, err := reader.ReadYAML(file)
 	assert.NoError(t, err)
 
-	// Modify port and URL to use mock server
-	graph.Input.Spec["port"] = 8082
+	// Use OS-assigned port to avoid clashes when tests run in parallel.
+	graph.Input.Spec["port"] = 0
 	graph.Flow.Nodes[0].Config.Spec["url"] = mockServer.URL
 
 	app, err := NewApp(*graph)
@@ -451,11 +472,11 @@ func TestIntegration_SimpleHTTPAsync(t *testing.T) {
 		done <- app.Run()
 	}()
 
-	// Wait a bit for server to start
-	time.Sleep(2 * time.Second)
+	port := waitForPort(app, 5*time.Second)
+	assert.NotZero(t, port, "server failed to bind")
 
 	// Send HTTP request (async - no response expected, just verify no error)
-	resp, err := http.Post("http://localhost:8082", "text/plain", bytes.NewReader([]byte("test message")))
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d", port), "text/plain", bytes.NewReader([]byte("test message")))
 	assert.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -496,8 +517,8 @@ func TestIntegration_SimpleHTTPSyncEnsemble(t *testing.T) {
 	graph, err := reader.ReadYAML(file)
 	assert.NoError(t, err)
 
-	// Modify port and URLs to use mock server
-	graph.Input.Spec["port"] = 8083
+	// Use OS-assigned port.
+	graph.Input.Spec["port"] = 0
 	graph.Flow.Nodes[0].Nodes[0].Config.Spec["url"] = mockServer.URL
 	graph.Flow.Nodes[0].Nodes[1].Config.Spec["url"] = mockServer.URL
 
@@ -513,11 +534,11 @@ func TestIntegration_SimpleHTTPSyncEnsemble(t *testing.T) {
 		done <- app.Run()
 	}()
 
-	// Wait a bit for server to start
-	time.Sleep(2 * time.Second)
+	port := waitForPort(app, 5*time.Second)
+	assert.NotZero(t, port, "server failed to bind")
 
 	// Send HTTP request
-	resp, err := http.Post("http://localhost:8083", "text/plain", bytes.NewReader([]byte("test message")))
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d", port), "text/plain", bytes.NewReader([]byte("test message")))
 	assert.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -577,8 +598,8 @@ func TestIntegration_SimpleHTTPSyncSwitch(t *testing.T) {
 	graph, err := reader.ReadYAML(file)
 	assert.NoError(t, err)
 
-	// Modify port and URLs to use different mock servers
-	graph.Input.Spec["port"] = 8084
+	// Use OS-assigned port.
+	graph.Input.Spec["port"] = 0
 	graph.Flow.Nodes[0].Nodes[0].Config.Spec["url"] = mockServer1.URL
 	graph.Flow.Nodes[0].Nodes[1].Config.Spec["url"] = mockServer2.URL
 
@@ -598,12 +619,13 @@ func TestIntegration_SimpleHTTPSyncSwitch(t *testing.T) {
 		done <- app.Run()
 	}()
 
-	// Wait a bit for server to start
-	time.Sleep(2 * time.Second)
+	port := waitForPort(app, 5*time.Second)
+	assert.NotZero(t, port, "server failed to bind")
+	baseURL := fmt.Sprintf("http://localhost:%d", port)
 
 	// Test condition 1: value == "test1" (currently defaults to service-2 due to condition evaluation issue)
 	calledServices = nil // Reset
-	resp, err := http.Post("http://localhost:8084", "application/json", bytes.NewReader([]byte(`{"value": "test1"}`)))
+	resp, err := http.Post(baseURL, "application/json", bytes.NewReader([]byte(`{"value": "test1"}`)))
 	assert.NoError(t, err)
 	resp.Body.Close()
 
@@ -613,7 +635,7 @@ func TestIntegration_SimpleHTTPSyncSwitch(t *testing.T) {
 
 	// Test condition 2: value == "test2"
 	calledServices = nil // Reset
-	resp, err = http.Post("http://localhost:8084", "application/json", bytes.NewReader([]byte(`{"value": "test2"}`)))
+	resp, err = http.Post(baseURL, "application/json", bytes.NewReader([]byte(`{"value": "test2"}`)))
 	assert.NoError(t, err)
 	resp.Body.Close()
 
@@ -702,6 +724,23 @@ func TestMultiSink_MultipleSinks(t *testing.T) {
 
 	assert.Equal(t, []any{[]byte("hello"), []byte("world")}, s1.received())
 	assert.Equal(t, []any{[]byte("hello"), []byte("world")}, s2.received())
+}
+
+func TestValidateGraph_OutputsList_DuplicateKind(t *testing.T) {
+	graph := model.Graph{
+		Input: &model.InputSpec{Kind: "http", Spec: map[string]interface{}{"port": 8080}},
+		Flow: &model.Node{
+			Type:   model.Service,
+			Config: model.NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://example.com"}},
+		},
+		Outputs: []model.OutputEntry{
+			{OutputSpec: model.OutputSpec{Kind: "stdout"}, Enabled: true},
+			{OutputSpec: model.OutputSpec{Kind: "stdout"}, Enabled: false},
+		},
+	}
+	err := validateGraph(&graph)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate")
 }
 
 // simpleSink collects messages for assertion in tests.

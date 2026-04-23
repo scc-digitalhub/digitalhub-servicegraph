@@ -24,7 +24,7 @@ func NewConfiguration(port int, path string) *Configuration {
 		Port: port,
 		Path: path,
 	}
-	if conf.Port == 0 {
+	if conf.Port < 0 {
 		conf.Port = defaultPort
 	}
 	if conf.Path == "" {

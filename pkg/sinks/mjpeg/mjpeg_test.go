@@ -32,7 +32,7 @@ func fakeJPEG(content string) []byte {
 
 // TestNewConfiguration verifies default value substitution.
 func TestNewConfiguration(t *testing.T) {
-	conf := NewConfiguration(0, "")
+	conf := NewConfiguration(-1, "")
 	if conf.Port != defaultPort {
 		t.Errorf("expected default port %d, got %d", defaultPort, conf.Port)
 	}
@@ -396,4 +396,82 @@ func isContextOrEOF(err error) bool {
 		strings.Contains(msg, "EOF") ||
 		strings.Contains(msg, "closed") ||
 		strings.Contains(msg, "reset")
+}
+
+// readOneFrame opens an HTTP GET against the sink, reads the first MJPEG part,
+// closes the response body, and returns the frame bytes.
+func readOneFrame(t *testing.T, addr string) []byte {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+defaultPath, nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("client do: %v", err)
+	}
+	defer resp.Body.Close()
+	_, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("parse media type: %v", err)
+	}
+	mr := multipart.NewReader(resp.Body, params["boundary"])
+	part, err := mr.NextPart()
+	if err != nil {
+		t.Fatalf("next part: %v", err)
+	}
+	data, err := io.ReadAll(part)
+	if err != nil && !isContextOrEOF(err) {
+		t.Fatalf("read part: %v", err)
+	}
+	return data
+}
+
+// TestMJPEGSink_ClientReconnect verifies that after a client disconnects, a
+// new client can reconnect and continue receiving frames. This guards against
+// regressions where stale client channels would block the broadcast loop.
+func TestMJPEGSink_ClientReconnect(t *testing.T) {
+	s := newTestSink(t)
+	addr := s.ListenAddr()
+
+	// Start a goroutine that pushes frames continuously until the test ends.
+	stop := make(chan struct{})
+	frame := fakeJPEG("RECONNECT_FRAME\r\n")
+	go func() {
+		ticker := time.NewTicker(20 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				select {
+				case s.In() <- frame:
+				case <-stop:
+					return
+				}
+			}
+		}
+	}()
+
+	// First client receives a frame, then disconnects (defer cancel in helper).
+	got := readOneFrame(t, addr)
+	if len(got) == 0 || !strings.HasPrefix(string(got), string(frame)) {
+		t.Errorf("first client frame mismatch: got %q want prefix %q", got, frame)
+	}
+
+	// Allow the server's unsubscribe path to run.
+	time.Sleep(50 * time.Millisecond)
+
+	// Second client connects and must also receive a frame.
+	got2 := readOneFrame(t, addr)
+	if len(got2) == 0 || !strings.HasPrefix(string(got2), string(frame)) {
+		t.Errorf("second client frame mismatch: got %q want prefix %q", got2, frame)
+	}
+
+	close(stop)
+	close(s.In())
+	s.AwaitCompletion()
 }

@@ -143,7 +143,7 @@ func NewConfiguration(port, readTimeout, writeTimeout, processTimeout int, maxIn
 		ProcessTimeout: processTimeout,
 		MaxInputSize:   maxInputSize,
 	}
-	if port == 0 {
+	if port < 0 {
 		newConfiguration.Port = defaultServerPort
 	}
 	if readTimeout == 0 {

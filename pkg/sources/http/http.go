@@ -8,11 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,11 +28,16 @@ import (
 )
 
 type HTTPSource struct {
-	sources.Source
-	Conf    *Configuration
-	factory sources.FlowFactory
-	logger  *slog.Logger
-	input   chan any
+	Conf     *Configuration
+	factory  sources.FlowFactory
+	logger   *slog.Logger
+	input    chan any
+
+	// listenAddr is populated once the underlying TCP listener is bound.
+	// Tests that use port 0 read this to discover the OS-assigned port.
+	mu         sync.RWMutex
+	listenAddr string
+	server     *http.Server
 }
 
 func (s *HTTPSource) init(factory sources.FlowFactory, handleHttp func(w http.ResponseWriter, r *http.Request)) error {
@@ -61,18 +68,29 @@ func (s *HTTPSource) init(factory sources.FlowFactory, handleHttp func(w http.Re
 
 	server := &http.Server{
 		Addr:         serverPort,
-		ReadTimeout:  time.Duration(s.Conf.ReadTimeout * int(time.Second)),
-		WriteTimeout: time.Duration(s.Conf.WriteTimeout * int(time.Second)),
+		ReadTimeout:  time.Duration(s.Conf.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(s.Conf.WriteTimeout) * time.Second,
 		Handler:      mux,
 	}
+
+	// Bind the listener up front so a bind failure is returned synchronously
+	// (avoids log.Fatalf from a goroutine and lets tests use port 0).
+	ln, err := net.Listen("tcp", serverPort)
+	if err != nil {
+		return fmt.Errorf("http source: failed to listen on %s: %w", serverPort, err)
+	}
+	s.mu.Lock()
+	s.listenAddr = ln.Addr().String()
+	s.server = server
+	s.mu.Unlock()
+	s.logger.Info("Server is starting", slog.String("addr", s.listenAddr))
 
 	// Channel to listen for errors coming from the server
 	serverErrors := make(chan error, 1)
 
 	// Start server
 	go func() {
-		log.Printf("Server is starting on %s\n", serverPort)
-		serverErrors <- server.ListenAndServe()
+		serverErrors <- server.Serve(ln)
 	}()
 
 	// Channel to listen for interrupt signals
@@ -82,22 +100,60 @@ func (s *HTTPSource) init(factory sources.FlowFactory, handleHttp func(w http.Re
 	// Block until we receive a signal or server error
 	select {
 	case err := <-serverErrors:
-		log.Fatalf("Error starting server: %v", err)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("http source: server error: %w", err)
+		}
 
 	case sig := <-shutdown:
-		log.Printf("Received signal %v, starting shutdown\n", sig)
+		s.logger.Info("Received signal, starting shutdown", slog.Any("signal", sig))
 
 		// Create context with timeout for shutdown
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		// Gracefully shutdown the server
-		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("Error during server shutdown: %v\n", err)
+		if err := server.Shutdown(shutCtx); err != nil {
+			s.logger.Warn("Error during server shutdown", slog.Any("error", err))
 			server.Close()
 		}
 	}
 	return nil
+}
+
+// ListenAddr returns the address the underlying listener is bound to.
+// It is populated once init() begins serving; it is empty before then.
+// Useful for tests that bind to port 0.
+func (s *HTTPSource) ListenAddr() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.listenAddr
+}
+
+// Port returns the TCP port the source is listening on, parsed from ListenAddr.
+func (s *HTTPSource) Port() int {
+	addr := s.ListenAddr()
+	if addr == "" {
+		return 0
+	}
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(p)
+	return n
+}
+
+// Stop gracefully shuts down the underlying HTTP server. Safe to call before
+// the server has started (it is a no-op in that case). Implements the
+// sources.Stoppable interface.
+func (s *HTTPSource) Stop(ctx context.Context) error {
+	s.mu.RLock()
+	srv := s.server
+	s.mu.RUnlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Shutdown(ctx)
 }
 
 func NewHTTPSource(conf *Configuration) *HTTPSource {
@@ -277,7 +333,7 @@ func (c *HTTPSourceProcessor) Validate(input model.InputSpec) error {
 	if err != nil {
 		return err
 	}
-	if conf.Port <= 0 || conf.Port > 65535 {
+	if conf.Port < 0 || conf.Port > 65535 {
 		return fmt.Errorf("invalid port number: %d", conf.Port)
 	}
 	if conf.ReadTimeout < 0 {

@@ -6,11 +6,18 @@ package websocket
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/scc-digitalhub/digitalhub-servicegraph/pkg/model"
@@ -21,13 +28,17 @@ import (
 )
 
 type WSSource struct {
-	sources.Source
 	factory     sources.FlowFactory
 	Conf        *Configuration
 	connections map[*websocket.Conn]bool
 	mutex       *sync.Mutex
 	logger      *slog.Logger
 	sink        *streams.Sink
+
+	// listenAddr is populated once the underlying TCP listener is bound.
+	addrMu     sync.RWMutex
+	listenAddr string
+	server     *http.Server
 }
 
 // Upgrader is used to upgrade HTTP connections to WebSocket connections.
@@ -55,13 +66,83 @@ func (s *WSSource) init(factory sources.FlowFactory) error {
 	s.connections = make(map[*websocket.Conn]bool)
 	s.mutex = &sync.Mutex{}
 
-	http.HandleFunc("/ws", s.wsHandler)
-	s.logger.Info("WebSocket server started on :8080")
-	err := http.ListenAndServe(serverPort, nil)
+	// Per-instance mux and server (avoid http.DefaultServeMux which causes
+	// duplicate-handler panics when WSSource is instantiated more than once).
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", s.wsHandler)
+	server := &http.Server{
+		Addr:    serverPort,
+		Handler: mux,
+	}
+
+	// Bind the listener up front so a bind failure is returned synchronously
+	// (lets tests use port 0 and discover the actual port via ListenAddr()).
+	ln, err := net.Listen("tcp", serverPort)
 	if err != nil {
-		s.logger.Error("Error starting server:", slog.Any("error", err))
+		return fmt.Errorf("websocket source: failed to listen on %s: %w", serverPort, err)
+	}
+	s.addrMu.Lock()
+	s.listenAddr = ln.Addr().String()
+	s.server = server
+	s.addrMu.Unlock()
+	s.logger.Info("WebSocket server started", slog.String("addr", s.listenAddr))
+
+	serverErrors := make(chan error, 1)
+	go func() {
+		serverErrors <- server.Serve(ln)
+	}()
+
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErrors:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("websocket source: server error: %w", err)
+		}
+	case sig := <-shutdown:
+		s.logger.Info("Received signal, starting shutdown", slog.Any("signal", sig))
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutCtx); err != nil {
+			s.logger.Warn("Error during server shutdown", slog.Any("error", err))
+			server.Close()
+		}
 	}
 	return nil
+}
+
+// ListenAddr returns the address the underlying listener is bound to.
+func (s *WSSource) ListenAddr() string {
+	s.addrMu.RLock()
+	defer s.addrMu.RUnlock()
+	return s.listenAddr
+}
+
+// Port returns the TCP port the source is listening on.
+func (s *WSSource) Port() int {
+	addr := s.ListenAddr()
+	if addr == "" {
+		return 0
+	}
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(p)
+	return n
+}
+
+// Stop gracefully shuts down the underlying HTTP server. Implements
+// sources.Stoppable.
+func (s *WSSource) Stop(ctx context.Context) error {
+	s.addrMu.RLock()
+	srv := s.server
+	s.addrMu.RUnlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Shutdown(ctx)
 }
 
 func (s *WSSource) Start(factory sources.FlowFactory) error {
@@ -198,7 +279,7 @@ func (c *WebSocketProcessor) Validate(input model.InputSpec) error {
 	if err != nil {
 		return err
 	}
-	if conf.Port <= 0 || conf.Port > 65535 {
+	if conf.Port < 0 || conf.Port > 65535 {
 		return fmt.Errorf("invalid port number: %d", conf.Port)
 	}
 	if conf.Capacity <= 0 {

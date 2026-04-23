@@ -5,6 +5,7 @@
 package util
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -281,14 +282,17 @@ func float16ToFloat32(bits uint16) float32 {
 	return math.Float32frombits(result)
 }
 
+// Convert serialises in to JSON and decodes it into out. Decoding rejects
+// unknown fields so that misspelled or unsupported configuration keys are
+// surfaced to the caller instead of being silently ignored.
 func Convert(in, out interface{}) error {
-	// marshal to json, unmarshal to config
 	data, err := json.Marshal(in)
 	if err != nil {
 		return err
 	}
-	err = json.Unmarshal(data, out)
-	if err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(out); err != nil {
 		return err
 	}
 	return nil
