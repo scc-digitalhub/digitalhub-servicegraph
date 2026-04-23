@@ -95,9 +95,18 @@ type OutputSpec struct {
 	Spec map[string]interface{} `json:"spec,omitempty"`
 }
 
+// OutputEntry is an element in the Graph.Outputs list.
+// Enabled controls whether this sink is active; defaults to false, so every
+// entry must opt-in explicitly (or be enabled at runtime via run arguments).
+type OutputEntry struct {
+	OutputSpec `json:",inline"`
+	Enabled    bool `json:"enabled"`
+}
+
 type Graph struct {
-	Input  *InputSpec  `json:"input"`
-	Flow   *Node       `json:"flow"`
-	Output *OutputSpec `json:"output,omitempty"`
-	Error  *OutputSpec `json:"error,omitempty"`
+	Input   *InputSpec    `json:"input"`
+	Flow    *Node         `json:"flow"`
+	Output  *OutputSpec   `json:"output,omitempty"`
+	Outputs []OutputEntry `json:"outputs,omitempty"`
+	Error   *OutputSpec   `json:"error,omitempty"`
 }

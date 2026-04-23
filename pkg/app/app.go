@@ -209,6 +209,26 @@ func (a *App) Run() error {
 			return err
 		}
 		source.StartAsync(a, sink)
+	} else if len(a.graph.Outputs) > 0 {
+		// Collect only enabled outputs.
+		var activeSinks []streams.Sink
+		for i := range a.graph.Outputs {
+			entry := &a.graph.Outputs[i]
+			if !entry.Enabled {
+				continue
+			}
+			outConverter, err := sinks.RegistrySingleton.Get(entry.Kind)
+			if err != nil {
+				return fmt.Errorf("failed to get outputs sink converter for kind %s: %w", entry.Kind, err)
+			}
+			s, err := outConverter.(sinks.Converter).Convert(entry.OutputSpec)
+			if err != nil {
+				return fmt.Errorf("failed to create outputs sink %s: %w", entry.Kind, err)
+			}
+			activeSinks = append(activeSinks, s)
+		}
+		sink := newMultiSink(activeSinks)
+		source.StartAsync(a, sink)
 	} else {
 		// Synchronous source: Start blocks until the source finishes.
 		// Close the error fan-in channel afterwards so the forwarding goroutine
@@ -252,6 +272,32 @@ func validateGraph(graph *model.Graph) error {
 			}
 		} else {
 			return fmt.Errorf("output kind %s does not support validation", graph.Output.Kind)
+		}
+	}
+	// validate outputs list
+	if len(graph.Outputs) > 0 {
+		for i := range graph.Outputs {
+			entry := &graph.Outputs[i]
+			outputValidator, err := sinks.RegistrySingleton.Get(entry.Kind)
+			if err != nil {
+				return fmt.Errorf("unknown outputs[%d] sink kind %q: %w", i, entry.Kind, err)
+			}
+			if validator, ok := outputValidator.(sinks.Validator); ok {
+				if err = validator.Validate(entry.OutputSpec); err != nil {
+					return fmt.Errorf("invalid outputs[%d] (%s) configuration: %w", i, entry.Kind, err)
+				}
+			}
+		}
+		// At least one enabled output must exist when using the outputs list.
+		hasEnabled := false
+		for _, entry := range graph.Outputs {
+			if entry.Enabled {
+				hasEnabled = true
+				break
+			}
+		}
+		if !hasEnabled {
+			return fmt.Errorf("outputs list is present but no entry has 'enabled: true'")
 		}
 	}
 	// validate error_sink (optional)
@@ -371,4 +417,52 @@ func validateNode(node *model.Node) error {
 	}
 
 	return nil
+}
+
+// multiSink fans out every incoming event to all underlying sinks in parallel.
+// It satisfies streams.Sink and is used when multiple enabled outputs are configured.
+type multiSink struct {
+	in   chan any
+	done chan struct{}
+}
+
+// newMultiSink creates a multiSink that broadcasts to all provided sinks.
+// Each sink must be non-nil. If sinks has exactly one element a plain reference
+// to that element is returned instead (avoids wrapping overhead).
+func newMultiSink(ss []streams.Sink) streams.Sink {
+	if len(ss) == 1 {
+		return ss[0]
+	}
+	ms := &multiSink{
+		in:   make(chan any),
+		done: make(chan struct{}),
+	}
+	go ms.process(ss)
+	return ms
+}
+
+func (ms *multiSink) process(ss []streams.Sink) {
+	defer func() {
+		// Close all downstream sinks and wait for each to finish.
+		for _, s := range ss {
+			close(s.In())
+		}
+		for _, s := range ss {
+			s.AwaitCompletion()
+		}
+		close(ms.done)
+	}()
+	for msg := range ms.in {
+		for _, s := range ss {
+			s.In() <- msg
+		}
+	}
+}
+
+func (ms *multiSink) In() chan<- any {
+	return ms.in
+}
+
+func (ms *multiSink) AwaitCompletion() {
+	<-ms.done
 }

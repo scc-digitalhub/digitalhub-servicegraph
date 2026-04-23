@@ -367,3 +367,183 @@ flow:
 	_, err = reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
 	assert.Error(t, err)
 }
+
+func TestReadYAML_WithOutputsList(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	yaml := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+outputs:
+  - kind: "stdout"
+    enabled: true
+  - kind: "ignore"
+    enabled: false
+`
+
+	graph, err := reader.ReadYAML(bytes.NewReader([]byte(yaml)))
+	assert.NoError(t, err)
+	assert.Len(t, graph.Outputs, 2)
+	assert.Equal(t, "stdout", graph.Outputs[0].Kind)
+	assert.True(t, graph.Outputs[0].Enabled)
+	assert.Equal(t, "ignore", graph.Outputs[1].Kind)
+	assert.False(t, graph.Outputs[1].Enabled)
+	assert.Nil(t, graph.Output)
+}
+
+func TestReadYAMLWithParams_EnableOutput(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+outputs:
+  - kind: "stdout"
+    enabled: false
+  - kind: "ignore"
+    enabled: false
+`
+
+	params := map[string]string{
+		"outputs.stdout.enabled": "true",
+	}
+
+	graph, err := reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.NoError(t, err)
+	assert.True(t, graph.Outputs[0].Enabled)
+	assert.False(t, graph.Outputs[1].Enabled)
+}
+
+func TestReadYAMLWithParams_OutputsSpec(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+outputs:
+  - kind: "webhook"
+    enabled: true
+    spec:
+      url: "http://original"
+`
+
+	params := map[string]string{
+		"outputs.webhook.url": "http://overridden",
+	}
+
+	graph, err := reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.NoError(t, err)
+	assert.Equal(t, "http://overridden", graph.Outputs[0].Spec["url"])
+}
+
+func TestReadYAMLWithParams_OutputsUnknownKind(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+outputs:
+  - kind: "stdout"
+    enabled: false
+`
+
+	params := map[string]string{
+		"outputs.nonexistent.enabled": "true",
+	}
+
+	_, err = reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent")
+}
+
+func TestReadYAMLWithParams_OutputsMissingSection(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	// Graph has no outputs section
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+`
+
+	params := map[string]string{
+		"outputs.stdout.enabled": "true",
+	}
+
+	_, err = reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "outputs")
+}
+
+func TestReadYAMLWithParams_OutputsShortKey(t *testing.T) {
+	reader, err := NewReader()
+	assert.NoError(t, err)
+
+	baseYAML := `
+input:
+  kind: "http"
+  spec:
+    port: 8080
+flow:
+  type: "sequence"
+  name: "example-flow"
+  nodes:
+    - type: "service"
+      name: "service1"
+outputs:
+  - kind: "stdout"
+    enabled: false
+`
+
+	// "outputs.stdout" has only one sub-segment — should fail validation
+	params := map[string]string{
+		"outputs.stdout": "true",
+	}
+
+	_, err = reader.ReadYAMLWithParams(bytes.NewReader([]byte(baseYAML)), params)
+	assert.Error(t, err)
+}

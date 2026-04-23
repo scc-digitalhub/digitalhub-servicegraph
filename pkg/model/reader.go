@@ -109,6 +109,34 @@ func applyParams(raw map[string]any, params map[string]string) error {
 			if err != nil {
 				return fmt.Errorf("param %q: %w", key, err)
 			}
+		case "outputs":
+			// outputs.<kind>.<subpath> – targets the spec of the named outputs entry.
+			// outputs.<kind>.enabled  – sets the enabled flag directly on the entry.
+			if len(subpath) < 2 {
+				return fmt.Errorf("param %q: outputs params must be in the form outputs.<kind>.<subpath>", key)
+			}
+			kind := subpath[0]
+			rest := subpath[1:]
+			entry, idx, err2 := findOutputsEntry(raw, kind)
+			if err2 != nil {
+				return fmt.Errorf("param %q: %w", key, err2)
+			}
+			if rest[0] == "enabled" && len(rest) == 1 {
+				// Set the enabled flag directly on the entry map.
+				entry["enabled"] = inferValue(strVal)
+				_ = idx
+				continue
+			}
+			// Otherwise route into the spec sub-map.
+			spec, _ := entry["spec"].(map[string]any)
+			if spec == nil {
+				spec = map[string]any{}
+				entry["spec"] = spec
+			}
+			if err := setNestedValue(spec, rest, inferValue(strVal)); err != nil {
+				return fmt.Errorf("param %q: %w", key, err)
+			}
+			continue
 		default:
 			var ok bool
 			target, ok = nodeSpecs[section]
@@ -122,6 +150,31 @@ func applyParams(raw map[string]any, params map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// findOutputsEntry returns the raw map for the outputs entry whose "kind"
+// matches the given kind string, together with its slice index.
+// Returns an error if "outputs" is not present, is not a slice, or no entry
+// with the requested kind is found.
+func findOutputsEntry(raw map[string]any, kind string) (map[string]any, int, error) {
+	outputs, ok := raw["outputs"]
+	if !ok {
+		return nil, -1, fmt.Errorf("section \"outputs\" not found in graph")
+	}
+	outputsSlice, ok := outputs.([]any)
+	if !ok {
+		return nil, -1, fmt.Errorf("section \"outputs\" is not a list")
+	}
+	for i, item := range outputsSlice {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if entry["kind"] == kind {
+			return entry, i, nil
+		}
+	}
+	return nil, -1, fmt.Errorf("no outputs entry with kind %q found", kind)
 }
 
 // ensureSpec returns (creating if absent) the "spec" sub-map of the named

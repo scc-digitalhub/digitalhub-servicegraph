@@ -80,6 +80,25 @@ func TestOutputSpec(t *testing.T) {
 	assert.Contains(t, string(data), "http://output.com")
 }
 
+func TestOutputEntry(t *testing.T) {
+	entry := OutputEntry{
+		OutputSpec: OutputSpec{Kind: "webhook", Spec: map[string]interface{}{"url": "http://hook.com"}},
+		Enabled:    true,
+	}
+	data, err := json.Marshal(entry)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), "webhook")
+	assert.Contains(t, string(data), "http://hook.com")
+	assert.Contains(t, string(data), `"enabled":true`)
+}
+
+func TestOutputEntry_DefaultDisabled(t *testing.T) {
+	entry := OutputEntry{
+		OutputSpec: OutputSpec{Kind: "stdout"},
+	}
+	assert.False(t, entry.Enabled)
+}
+
 func TestGraph(t *testing.T) {
 	graph := Graph{
 		Input: &InputSpec{
@@ -100,6 +119,35 @@ func TestGraph(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), "http://input.com")
 	assert.Contains(t, string(data), "http://output.com")
+}
+
+func TestGraph_WithOutputsList(t *testing.T) {
+	graph := Graph{
+		Input: &InputSpec{
+			Kind: "http",
+			Spec: map[string]interface{}{"port": 8080},
+		},
+		Flow: &Node{Type: Service, Config: NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://svc"}}},
+		Outputs: []OutputEntry{
+			{OutputSpec: OutputSpec{Kind: "stdout"}, Enabled: true},
+			{OutputSpec: OutputSpec{Kind: "ignore"}, Enabled: false},
+		},
+	}
+
+	data, err := json.Marshal(graph)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), `"outputs"`)
+	assert.Contains(t, string(data), "stdout")
+	assert.Contains(t, string(data), "ignore")
+
+	// Round-trip
+	var g2 Graph
+	assert.NoError(t, json.Unmarshal(data, &g2))
+	assert.Len(t, g2.Outputs, 2)
+	assert.Equal(t, "stdout", g2.Outputs[0].Kind)
+	assert.True(t, g2.Outputs[0].Enabled)
+	assert.Equal(t, "ignore", g2.Outputs[1].Kind)
+	assert.False(t, g2.Outputs[1].Enabled)
 }
 
 func TestNode_ConditionExpression(t *testing.T) {

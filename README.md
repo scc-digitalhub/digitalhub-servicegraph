@@ -113,7 +113,54 @@ Video events carry the JPEG bytes in `GetBody()` with `Content-Type: image/jpeg`
 
 ## Sinks
 
-Service Graph supports the following sink types:
+Service Graph supports the following sink types.
+
+### Configuring outputs
+
+There are two ways to specify where processed events should be sent.
+
+**Single output (legacy):** Use the top-level `output` field. Only one sink is active.
+
+```yaml
+output:
+  kind: "webhook"
+  spec:
+    url: "https://api.example.com/webhook"
+```
+
+**Multiple outputs list:** Use the `outputs` list instead of (or in addition to) `output`. Each entry has a `kind`, an optional `spec`, and an `enabled` flag (defaults to `false`). At least one entry must have `enabled: true`.
+
+```yaml
+outputs:
+  - kind: "webhook"
+    enabled: true
+    spec:
+      url: "https://api.example.com/primary"
+  - kind: "stdout"
+    enabled: false
+  - kind: "file"
+    enabled: true
+    spec:
+      file_name: "output.txt"
+```
+
+When both `output` and `outputs` are present, `outputs` takes precedence for sink construction; `output` is kept for backward compatibility. All enabled outputs receive every event (fan-out). Disabled entries are ignored and can be switched on at runtime without editing the YAML file.
+
+#### Enabling / disabling outputs at runtime
+
+Use run arguments with the `outputs.<kind>.<subpath>` syntax to override any field of an outputs entry, including `enabled`:
+
+```bash
+# Enable the stdout sink at startup without editing the YAML
+servicegraph -p "outputs.stdout.enabled=true" pipeline.yaml
+
+# Override the webhook URL and enable it
+servicegraph -p "outputs.webhook.enabled=true" \
+             -p "outputs.webhook.url=https://staging.example.com/hook" \
+             pipeline.yaml
+```
+
+The `<kind>` token matches the `kind` field of the target entry. If the `outputs` section is absent or no entry with the given kind exists, the run will fail with a descriptive error.
 
 
 ### Webhook Sink

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -627,4 +628,112 @@ func TestIntegration_SimpleHTTPSyncSwitch(t *testing.T) {
 	case <-ctx.Done():
 		// Timeout, app is still running, but test passed
 	}
+}
+
+func TestValidateGraph_OutputsList_NoEnabledEntry(t *testing.T) {
+	graph := model.Graph{
+		Input: &model.InputSpec{Kind: "http", Spec: map[string]interface{}{"port": 8080}},
+		Flow: &model.Node{
+			Type:   model.Service,
+			Config: model.NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://example.com"}},
+		},
+		Outputs: []model.OutputEntry{
+			{OutputSpec: model.OutputSpec{Kind: "stdout"}, Enabled: false},
+			{OutputSpec: model.OutputSpec{Kind: "ignore"}, Enabled: false},
+		},
+	}
+	err := validateGraph(&graph)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "enabled")
+}
+
+func TestValidateGraph_OutputsList_ValidWithOneEnabled(t *testing.T) {
+	graph := model.Graph{
+		Input: &model.InputSpec{Kind: "http", Spec: map[string]interface{}{"port": 8080}},
+		Flow: &model.Node{
+			Type:   model.Service,
+			Config: model.NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://example.com"}},
+		},
+		Outputs: []model.OutputEntry{
+			{OutputSpec: model.OutputSpec{Kind: "stdout"}, Enabled: true},
+			{OutputSpec: model.OutputSpec{Kind: "ignore"}, Enabled: false},
+		},
+	}
+	err := validateGraph(&graph)
+	assert.NoError(t, err)
+}
+
+func TestValidateGraph_OutputsList_UnknownKind(t *testing.T) {
+	graph := model.Graph{
+		Input: &model.InputSpec{Kind: "http", Spec: map[string]interface{}{"port": 8080}},
+		Flow: &model.Node{
+			Type:   model.Service,
+			Config: model.NodeConfig{Kind: "http", Spec: map[string]interface{}{"url": "http://example.com"}},
+		},
+		Outputs: []model.OutputEntry{
+			{OutputSpec: model.OutputSpec{Kind: "unknownsink"}, Enabled: true},
+		},
+	}
+	err := validateGraph(&graph)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknownsink")
+}
+
+func TestMultiSink_SingleSink(t *testing.T) {
+	// With exactly one sink, newMultiSink should return the sink itself.
+	s := newSimpleSink()
+	result := newMultiSink([]streams.Sink{s})
+	assert.Equal(t, s, result)
+	close(s.In())
+	s.AwaitCompletion()
+}
+
+func TestMultiSink_MultipleSinks(t *testing.T) {
+	// Two sinks: every message should arrive at both.
+	s1 := newSimpleSink()
+	s2 := newSimpleSink()
+
+	ms := newMultiSink([]streams.Sink{s1, s2})
+
+	ms.In() <- []byte("hello")
+	ms.In() <- []byte("world")
+	close(ms.In())
+	ms.AwaitCompletion()
+
+	assert.Equal(t, []any{[]byte("hello"), []byte("world")}, s1.received())
+	assert.Equal(t, []any{[]byte("hello"), []byte("world")}, s2.received())
+}
+
+// simpleSink collects messages for assertion in tests.
+type simpleSink struct {
+	in   chan any
+	done chan struct{}
+	msgs []any
+	mu   sync.Mutex
+}
+
+func newSimpleSink() *simpleSink {
+	s := &simpleSink{
+		in:   make(chan any, 16),
+		done: make(chan struct{}),
+	}
+	go func() {
+		defer close(s.done)
+		for msg := range s.in {
+			s.mu.Lock()
+			s.msgs = append(s.msgs, msg)
+			s.mu.Unlock()
+		}
+	}()
+	return s
+}
+
+func (s *simpleSink) In() chan<- any   { return s.in }
+func (s *simpleSink) AwaitCompletion() { <-s.done }
+func (s *simpleSink) received() []any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]any, len(s.msgs))
+	copy(cp, s.msgs)
+	return cp
 }
