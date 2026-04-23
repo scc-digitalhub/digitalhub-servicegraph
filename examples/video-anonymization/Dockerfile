@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 FROM python:3.11-slim
 
 # Install system dependencies for OpenCV

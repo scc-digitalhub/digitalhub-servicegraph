@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 .PHONY: setup start test clean docker-build docker-up docker-down help
 
 help: ## Show this help message

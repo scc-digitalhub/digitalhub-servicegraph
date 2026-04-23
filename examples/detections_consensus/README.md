@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Detections Consensus Example
 
 This example runs two object detection model steps and combines their predictions through a vote-based consensus stage.

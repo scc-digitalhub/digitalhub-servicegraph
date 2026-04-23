@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Video Anonymization Pipeline Example
 
 This example demonstrates a real-time video anonymization pipeline using the **digitalhub-servicegraph** framework. The pipeline processes MJPEG video streams and automatically detects and anonymizes faces using advanced computer vision techniques.

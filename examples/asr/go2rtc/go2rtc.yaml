@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 streams:
   mystream:
     - ffmpeg:/config/male_0_kmh.mp3#audio=pcml/16000

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import React from 'react'
 import { Box, FormControl, FormHelperText, InputLabel, MenuItem, Select, TextField } from '@mui/material'
 

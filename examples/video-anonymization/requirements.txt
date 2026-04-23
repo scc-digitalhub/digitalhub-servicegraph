@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 flask>=2.3.0
 opencv-python>=4.8.0
 opencv-contrib-python>=4.8.0

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material'

@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
 # Service Graph Designer - Development Server Startup Script
 
 echo "🚀 Starting Service Graph Designer..."

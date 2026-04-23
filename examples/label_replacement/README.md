@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Label Replacement Example
 
 This example shows how to combine a generic object detector with a more specific classifier and keep the result attached to the original object locations.

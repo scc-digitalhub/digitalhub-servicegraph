@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: © 2026 DSLab - Fondazione Bruno Kessler
+//
+// SPDX-License-Identifier: Apache-2.0
+
 import React, { useState } from 'react'
 import {
   Box, Typography, FormControl, InputLabel,
