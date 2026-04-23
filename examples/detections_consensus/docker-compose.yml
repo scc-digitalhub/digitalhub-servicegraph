@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  detector-a:
+    build:
+      context: .
+      dockerfile: Dockerfile-obj-det
+    image: detector-a:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8091
+      - OBJECT_DETECTION_MODEL=/workspace/yolov8n.pt
+    ports:
+      - "8091:8091"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8091/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+  detector-b:
+    build:
+      context: .
+      dockerfile: Dockerfile-obj-det
+    image: detector-b:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8092
+      - OBJECT_DETECTION_MODEL=/workspace/yolov8n.pt
+    ports:
+      - "8092:8092"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8092/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+  detections-consensus:
+    build:
+      context: .
+      dockerfile: Dockerfile-consensus
+    image: detections-consensus:latest
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace:cached
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8093
+    ports:
+      - "8093:8093"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8093/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+networks:
+  default:
+    driver: bridge

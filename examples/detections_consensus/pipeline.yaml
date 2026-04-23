@@ -1,0 +1,75 @@
+input:
+  kind: "http"
+  spec:
+    port: 8080
+    read_timeout: 10
+
+flow:
+  type: "sequence"
+  name: "detections-consensus-workflow"
+  nodes:
+    - type: "service"
+      name: "detector-a"
+      config:
+        kind: "http"
+        spec:
+          url: "http://localhost:8091/detect"
+          method: "POST"
+          headers:
+            Content-Type: "image/jpeg"
+          params:
+            threshold: "0.35"
+            class_filter: "dog"
+          num_instances: 2
+
+    - type: "service"
+      name: "detector-b"
+      config:
+        kind: "http"
+        spec:
+          url: "http://localhost:8092/detect"
+          method: "POST"
+          headers:
+            Content-Type: "application/json"
+          params:
+            threshold: "0.45"
+            class_filter: "dog"
+          num_instances: 2
+          input_template: |
+            {
+              "image_b64": {{ . | jp "$.image_b64" | json }},
+              "passthrough": {
+                "detections_a": {{ . | jp "$.detections" | json }},
+                "model_a": {{ . | jp "$.model" | json }}
+              }
+            }
+          output_template: |
+            {
+              "detections_a": {{ . | jp "$.passthrough.detections_a" | json }},
+              "detections_b": {{ . | jp "$.detections" | json }},
+              "model_names": [
+                {{ . | jp "$.passthrough.model_a" | json }},
+                {{ . | jp "$.model" | json }}
+              ]
+            }
+
+    - type: "service"
+      name: "detections-consensus"
+      config:
+        kind: "http"
+        spec:
+          url: "http://localhost:8093/fuse"
+          method: "POST"
+          headers:
+            Content-Type: "application/json"
+          params:
+            iou_threshold: "0.50"
+            vote_threshold: "2"
+            same_label_only: "true"
+          num_instances: 2
+
+output:
+  kind: "stdout"
+
+error:
+  kind: "errorlog"
